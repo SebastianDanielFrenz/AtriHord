@@ -1321,25 +1321,30 @@ function paint3dButton(f) {
 // shared by the grid, the search results and the preview's list, so flipping it
 // here updates all of them; the tiles on screen are found by path.
 async function toggleFavorite(f) {
+  // Optimistic: the heart flips at once; the server's answer only matters if it refuses.
   const want = !f.favorite;
-  let res;
+  const root = f.root || currentMediaRoot || '';
+  const apply = (on) => {
+    f.favorite = on;
+    for (const tile of document.querySelectorAll('.media-tile[data-path]')) {
+      if (tile.dataset.path === f.path && tile.dataset.root === root) setTileFavorite(tile, on);
+    }
+    const shown = activePreviewList[currentPreviewIndex];
+    if (shown && shown.path === f.path && (shown.root || currentMediaRoot || '') === root) paintFavoriteButton(shown);
+  };
+  apply(want);
+  let ok = false;
   try {
-    res = await fetch('/api/media/favorite', {
+    const res = await fetch('/api/media/favorite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ root: f.root || currentMediaRoot, path: f.path, favorite: want }),
+      body: JSON.stringify({ root, path: f.path, favorite: want }),
     });
+    ok = res.ok;
   } catch (e) {
-    return;
+    ok = false;
   }
-  if (!res.ok) return;
-  f.favorite = want;
-  const root = f.root || currentMediaRoot || '';
-  for (const tile of document.querySelectorAll('.media-tile[data-path]')) {
-    if (tile.dataset.path === f.path && tile.dataset.root === root) setTileFavorite(tile, want);
-  }
-  const shown = activePreviewList[currentPreviewIndex];
-  if (shown && shown.path === f.path && (shown.root || currentMediaRoot || '') === root) paintFavoriteButton(shown);
+  if (!ok && f.favorite === want) apply(!want);
 }
 
 function setTileFavorite(tile, on) {
