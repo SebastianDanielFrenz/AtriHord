@@ -76,7 +76,63 @@ function painted() {
 // true when it was swapped, false when the browser cannot open the picture at
 // all, null when whatever was waiting for it has moved on. `before` runs in the
 // same breath as the swap, for anything that has to change with it.
-async function swapPicture(img, url, stillWanted, before) {
+// A 4x copy of a big picture is tens of megapixels, and decoding that in the page costs a hundred
+// milliseconds or more of main thread - long enough to make the music glitch while it plays (measured
+// 2026-11-06: a 7680x4320 cover, a 161 ms task right after it loaded). Nothing on this screen can show
+// more than its own pixels, so a copy larger than the screen is cut down to the screen's size first, in a
+// WORKER: fetch, decode and resize (createImageBitmap) and WebP encode (OffscreenCanvas) all happen
+// there - the same steps on the page's own thread measured a 151 ms task even through createImageBitmap,
+// in the worker none. The swap below then handles a picture a quarter of the size.
+// null = could not (no support, a failed fetch, the copy is not larger than the screen): the original
+// url is swapped in as before.
+const LIGHTER_WORKER = `self.onmessage = async (e) => {
+  try {
+    const { url, w, h } = e.data;
+    const blob = await (await fetch(url)).blob();
+    const bmp = await createImageBitmap(blob, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+    const oc = new OffscreenCanvas(bmp.width, bmp.height);
+    oc.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
+    self.postMessage({ blob: await oc.convertToBlob({ type: 'image/webp', quality: 0.97 }) });
+  } catch (err) { self.postMessage({ error: String(err) }); }
+};`;
+
+async function lighterCopy(url, width, height) {
+  let worker = null;
+  let workerUrl = null;
+  try {
+    const dpr = window.devicePixelRatio || 1;
+    const maxSide = Math.ceil(Math.max(screen.width, screen.height) * dpr);
+    const long = Math.max(width || 0, height || 0);
+    if (!long || long <= maxSide * 1.1) return null;
+    if (typeof Worker !== 'function' || typeof createImageBitmap !== 'function'
+        || typeof OffscreenCanvas !== 'function') return null;
+    const k = maxSide / long;
+    workerUrl = URL.createObjectURL(new Blob([LIGHTER_WORKER], { type: 'text/javascript' }));
+    worker = new Worker(workerUrl);
+    const answer = await new Promise((resolve) => {
+      const giveUp = setTimeout(() => resolve({ error: 'timeout' }), 30000);
+      worker.onmessage = (e) => { clearTimeout(giveUp); resolve(e.data); };
+      worker.onerror = () => { clearTimeout(giveUp); resolve({ error: 'worker' }); };
+      worker.postMessage({ url: new URL(url, location.href).href,
+        w: Math.max(1, Math.round(width * k)), h: Math.max(1, Math.round(height * k)) });
+    });
+    const out = answer && answer.blob;
+    return out && out.size ? URL.createObjectURL(out) : null;
+  } catch (e) {
+    return null;
+  } finally {
+    if (worker) worker.terminate();
+    if (workerUrl) URL.revokeObjectURL(workerUrl);
+  }
+}
+
+async function swapPicture(img, url, stillWanted, before, dims) {
+  const light = dims ? await lighterCopy(url, dims.width, dims.height) : null;
+  if (light) {
+    const r = await swapPicture(img, light, stillWanted, before);
+    setTimeout(() => URL.revokeObjectURL(light), 60000);
+    return r;
+  }
   const box = img.getBoundingClientRect();
   const ghost = document.createElement('img');
   ghost.src = url;
@@ -236,7 +292,7 @@ async function startLiveUpscale(img, f, opts) {
     const swapped = await swapPicture(img, data.url, showing, () => {
       img.dataset.upscaled = String(data.factor);
       pinUpscaledSize(img);          // player.js: the original's size on screen
-    });
+    }, { width: data.width, height: data.height });
     if (swapped === false) {
       note({ status: 'undecodable', width: data.width, height: data.height });
       return;
