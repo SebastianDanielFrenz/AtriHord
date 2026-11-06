@@ -768,14 +768,25 @@
     bridgeSend({ type: 'mode', mode: UP.mode, heights: UP.heights, rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000 });
   }
 
+  // Tries every 3 s for 30 s; then it stops until the user touches the output or heights switch (bridgeKick).
+  const BRIDGE_TRY_MS = 3000, BRIDGE_WINDOW_MS = 30000;
+  function bridgeKick() {
+    if (!BR.stopped || BR.ws) return;
+    BR.stopped = false;
+    BR.windowStart = Date.now();
+    bridgeConnect();
+  }
+
   function bridgeConnect() {
-    if (BR.ws || IOS || !('WebSocket' in window)) return;
+    if (BR.ws || BR.stopped || IOS || !('WebSocket' in window)) return;
+    if (!BR.windowStart) BR.windowStart = Date.now();
     let ws;
     try { ws = new WebSocket(BRIDGE_URL); } catch (e) { console.warn('[music-bridge] cannot open', BRIDGE_URL, e); return; }
     BR.ws = ws;
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       BR.fails = 0;
+      BR.windowStart = 0;
       if (BR.state !== 'connected') console.info('Bridge connected at ' + BRIDGE_URL);
       BR.state = 'connected';
       bridgeSend({ type: 'hello', rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000, mode: UP.mode, heights: UP.heights });
@@ -796,7 +807,7 @@
     const gone = (ev) => {
       if (BR.ws !== ws) return;
       // One line per change of state, not per attempt. (The browser itself prints a red "WebSocket connection
-      // failed" for every refused attempt; page code cannot silence that, so the retries slow down instead.)
+      // failed" for every refused attempt; page code cannot silence that, so the attempts are limited instead.)
       if (BR.state === 'connected') { console.warn('Bridge connection lost. Attempting to reconnect.'); BR.state = 'lost'; }
       else if (!BR.state) { console.warn('Bridge not reachable at ' + BRIDGE_URL + ' (app not running, or the browser blocked local network access for this site)'); BR.state = 'unreachable'; }
       BR.fails = (BR.fails || 0) + 1;
@@ -808,7 +819,12 @@
         else renderSurround();
       }
       clearTimeout(BR.retry);
-      BR.retry = setTimeout(bridgeConnect, BR.fails > 6 ? 30000 : BR.fails > 2 ? 15000 : 8000);   // the app may be started later
+      if (!BR.windowStart) BR.windowStart = Date.now();          // a connection that was up and dropped: a fresh 30 s
+      if (Date.now() - BR.windowStart < BRIDGE_WINDOW_MS) BR.retry = setTimeout(bridgeConnect, BRIDGE_TRY_MS);   // the app may be started later
+      else {
+        BR.stopped = true;
+        console.info('Bridge: not found, no longer trying. Touch the output or heights switch to try again.');
+      }
     };
     ws.onclose = gone;
     ws.onerror = () => { /* onclose follows */ };
@@ -1699,7 +1715,7 @@
     //  - longTasksLast3s not empty                        -> the page's main thread was busy (client)
     //  - "audio clock lagged"                             -> the browser's audio engine missed deadlines (client / system)
     //  - "pause" with a large msSinceInput                -> nothing the user did paused it
-    const WATCH = { long: [], lastInput: 0, stallStart: 0, lastPos: -1, lastPosAt: 0, clk: null };
+    const WATCH = { events: [], long: [], lastInput: 0, stallStart: 0, lastPos: -1, lastPosAt: 0, clk: null };
     const watchState = () => {
       const el = mediaEl;
       let ahead = null;
@@ -1725,6 +1741,7 @@
         src: el ? String(el.currentSrc || '').slice(-70) : '',
       };
     };
+    window.musicWatchLog = WATCH.events;
     const watchLog = (kind, extra) => console.warn('[music-watch] ' + kind, Object.assign(watchState(), extra || {}));
     for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => { WATCH.lastInput = performance.now(); }, true);
     try {
@@ -1738,7 +1755,15 @@
         el.addEventListener(ev, () => { if (el === mediaEl && !el.paused) watchLog(ev); });
       }
       el.addEventListener('error', () => { if (el === mediaEl) watchLog('error', { code: el.error && el.error.code, message: el.error && el.error.message }); });
-      el.addEventListener('pause', () => { if (el === mediaEl && !el.ended) watchLog('pause'); });
+      // pause / resume are collected for debugging, not printed: in the console type  musicWatchLog  (or
+      // copy(JSON.stringify(musicWatchLog, null, 1)))
+      for (const ev of ['pause', 'play']) {
+        el.addEventListener(ev, () => {
+          if (el !== mediaEl || (ev === 'pause' && el.ended)) return;
+          WATCH.events.push(Object.assign({ event: ev }, watchState()));
+          if (WATCH.events.length > 300) WATCH.events.splice(0, WATCH.events.length - 300);
+        });
+      }
       el.addEventListener('ended', () => {
         if (el !== mediaEl) return;
         const d = el.duration;
@@ -3909,6 +3934,18 @@
     $('muNewPlaylist').addEventListener('click', () => createPlaylist([]));
     for (const id of ['muNowCover', 'muStageCover']) {
       $(id).addEventListener('contextmenu', (e) => { e.preventDefault(); coverMenu(e); });
+    }
+    // A disabled button gets no hover events, and Heights is disabled exactly when the bridge is missing, so
+    // while the page has given up the pointer is checked against the two buttons' rectangles instead.
+    document.addEventListener('pointermove', (e) => {
+      if (!BR.stopped || BR.ws) return;
+      for (const id of ['muHeights', 'muSurround']) {
+        const r = $(id).getBoundingClientRect();
+        if (r.width && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { bridgeKick(); return; }
+      }
+    }, { passive: true });
+    for (const id of ['muHeights', 'muSurround']) {
+      for (const ev of ['focus', 'pointerdown']) $(id).addEventListener(ev, bridgeKick);
     }
     $('muHeights').addEventListener('click', () => setHeights(!UP.heights));
     $('muSurround').addEventListener('click', () => setUpMode(UP.mode === 'all' ? 'stereo' : 'all'));
