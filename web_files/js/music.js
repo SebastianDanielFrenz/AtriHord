@@ -565,7 +565,7 @@
     RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
     if (RLOG.length > 300) RLOG.shift();
   }
-  console.info('[music] build 2026-11-06e (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start)');
+  console.info('[music] build 2026-11-06f (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start)');
   // The level of the signal inside the page for 8 s from the moment the elements are routed, every 25 ms:
   // [ms, rms, element position, blocks sent to the bridge since the previous row, socket backlog]. A hole in the
   // sound that comes from the page shows as rms 0 (or a position that stands still); a hole that does not show here
@@ -990,12 +990,14 @@
     // made). Playing the browser's own 7.1 meanwhile and moving over afterwards is audible: a different sound and
     // a hitch. So wait in silence, at most 600 ms, and start on the bridge route; after that (or without a bridge)
     // the browser plays as before.
-    if (bridgeActive()) BR.waitDone = true;
+    if (bridgeActive()) { BR.waitDone = true; clearTimeout(BR.waitT); }
     const waiting = !BR.waitDone && ((BR.info && !BR.node) || (BR.ws && !BR.info && BR.ws.readyState <= 1));   // connecting, or open and not yet answered
     if (waiting) {
       rlog('buildUpmix: silent, waiting for the bridge', { info: !!BR.info, node: !!BR.node, ws: BR.ws ? BR.ws.readyState : 'none' });
       clearTimeout(BR.waitT);
-      BR.waitT = setTimeout(() => { BR.waitDone = true; buildUpmix(); }, 600);
+      // the safety net only acts if the bridge route still does not stand when it fires (it fired a second rebuild
+      // 600 ms after the route was already chosen: a fade out, rewire and fade in, about 200 ms of silence)
+      BR.waitT = setTimeout(() => { BR.waitDone = true; if (!UP.viaBridge) buildUpmix(); }, 600);
       renderSurround();
       return;
     }
