@@ -651,17 +651,18 @@
   // key and on every play: the AudioContext is made on the first one that is
   // allowed to start it, and the elements are routed only once it RUNS - an
   // element routed into a context that is not running is silent.
+  // Returns a promise that settles once the elements are routed (or it is clear they will not be).
   function startLoudness() {
     if (LOUD.nodes.size) {
       if (LOUD.ctx.state !== 'running') LOUD.ctx.resume().catch(() => {});
-      return;
+      return Promise.resolve();
     }
-    if (LOUD.off) return;
+    if (LOUD.off) return Promise.resolve();
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC || IOS) { LOUD.off = true; return; }
+    if (!AC || IOS) { LOUD.off = true; return Promise.resolve(); }
     // Not before the first click or key: a context made earlier (the queue
     // restored on load) is refused and only warns in the console.
-    if (!LOUD.ctx && navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+    if (!LOUD.ctx && navigator.userActivation && !navigator.userActivation.hasBeenActive) return Promise.resolve();
     try {
       if (!LOUD.ctx) {
         LOUD.ctx = new AC();
@@ -671,7 +672,7 @@
           if (LOUD.nodes.size && LOUD.ctx.state !== 'running' && !mediaEl.paused) LOUD.ctx.resume().catch(() => {});
         });
       }
-    } catch (e) { LOUD.off = true; return; }
+    } catch (e) { LOUD.off = true; return Promise.resolve(); }
     const route = () => {
       if (LOUD.ctx.state !== 'running' || LOUD.nodes.size || LOUD.off) return;
       for (const m of [audio, videoEl]) {
@@ -687,8 +688,22 @@
       applyVolume();
       if (infoOpen) renderInfo();
     };
-    if (LOUD.ctx.state === 'running') route();
-    else LOUD.ctx.resume().then(route, () => {});
+    if (LOUD.ctx.state === 'running') { route(); return Promise.resolve(); }
+    return LOUD.ctx.resume().then(route, () => {});
+  }
+
+  // The first start. play() used to begin on the element's own output; the 'play' event then built the audio engine
+  // and captured the element into it, and that handover was audible: the song, a gap of about 200 ms, the song
+  // again (and on a bridge, once more when the route moved). Now the engine is built and the element routed
+  // BEFORE the element starts, so the first sound already comes from the graph. Never longer than 500 ms: playback
+  // must not depend on it.
+  for (const m of [audio, videoEl]) {
+    const nativePlay = m.play.bind(m);
+    m.play = function () {
+      if (LOUD.nodes.size || LOUD.off) return nativePlay();
+      const routed = startLoudness();
+      return Promise.race([routed, new Promise((r) => setTimeout(r, 500))]).then(() => nativePlay());
+    };
   }
 
   // ---- every ear-level speaker (user, 2026-11-04/05) -------------------------
