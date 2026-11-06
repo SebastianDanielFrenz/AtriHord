@@ -8,7 +8,7 @@
   <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
        it into an app: a local copy is a copy that drifts. -->
   <link rel="stylesheet" href="/css/atrihord.css">
-  <link rel="stylesheet" href="/css/music.css">
+  <link rel="stylesheet" href="/css/music.css?v=20261106g">
 </head>
 <body class="ah music-app">
   <header class="mu-top">
@@ -36,11 +36,6 @@
     <ul class="mu-side-list" id="muSideMine"></ul>
     <div class="mu-side-title">Playlists</div>
     <ul class="mu-side-list" id="muSidePlaylists"></ul>
-    <div class="mu-side-sep"></div>
-    <label class="mu-side-setting" title="Every song and video plays at this loudness. A very dynamic file stops where it would clip.">
-      <span class="mu-side-title">Loudness</span>
-      <select id="muTargetLufs" aria-label="Target loudness"></select>
-    </label>
   </nav>
 
   <main class="mu-main" id="muMain" tabindex="-1">
@@ -118,7 +113,13 @@
       <div class="mu-extras">
         <button type="button" class="mu-heights" id="muSurround" aria-pressed="false" disabled>Stereo</button>
         <button type="button" class="mu-heights" id="muHeights" aria-pressed="false" disabled>Heights</button>
-        <button type="button" class="mu-icon-btn mu-vol-btn" id="muMute" aria-label="Mute" data-icon="volume"></button>
+        <span class="mu-vol-wrap">
+          <button type="button" class="mu-icon-btn mu-vol-btn" id="muMute" aria-label="Mute" data-icon="volume"></button>
+          <label class="mu-loud-pop" title="Every song and video plays at this loudness. A very dynamic file stops where it would clip.">
+            <span class="mu-side-title">Loudness</span>
+            <select id="muTargetLufs" aria-label="Target loudness"></select>
+          </label>
+        </span>
         <input type="range" class="mu-volume" id="muVolume" min="0" max="100" value="100" aria-label="Volume">
         <datalist id="muVolStop"><option value="100"></option></datalist>
         <button type="button" class="mu-icon-btn" id="muRepeat" aria-label="Repeat: off" aria-pressed="false" data-icon="repeat"></button>

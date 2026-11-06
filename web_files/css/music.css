@@ -876,6 +876,41 @@ body.music-app {
   justify-content: flex-end;
   gap: var(--sp-1);
 }
+/* The loudness picker: opens above the speaker button on hover or keyboard focus. The padding-bottom
+   bridges the gap so the pointer can travel from the button up into the picker. */
+.mu-vol-wrap { position: relative; display: inline-flex; }
+.mu-loud-pop {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  display: none;
+  flex-direction: column;
+  min-width: 230px;
+  padding: var(--sp-2) 0 var(--sp-3);
+  margin-bottom: var(--sp-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+}
+.mu-loud-pop::after {            /* hover bridge across the margin */
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 100%;
+  height: calc(var(--sp-2) + 2px);
+}
+.mu-vol-wrap:hover .mu-loud-pop,
+.mu-vol-wrap:focus-within .mu-loud-pop { display: flex; }
+.mu-loud-pop select {
+  margin: 0 var(--sp-3);
+  padding: 6px var(--sp-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
 .mu-volume {
   width: 96px;
   accent-color: var(--accent);
