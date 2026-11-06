@@ -978,7 +978,9 @@
     const chip = $('muSurround');
     const btn = $('muHeights');
     if (!chip || !btn) return;
-    const viaApp = bridgeActive();
+    // The app counts as there as soon as it has answered: its tap needs the audio engine, which only exists once
+    // something has played, but the switches should not wait for that.
+    const viaApp = !!(BR.ws && BR.ws.readyState === 1 && BR.info);
     const routed = LOUD.ctx && UP.input;
     const lay = viaApp ? null : (routed ? UP.layout : (SURROUND[UP.probed] || null));
     const multi = viaApp || !!lay;
