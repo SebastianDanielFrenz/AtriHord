@@ -771,10 +771,13 @@
   function bridgeConnect() {
     if (BR.ws || IOS || !('WebSocket' in window)) return;
     let ws;
-    try { ws = new WebSocket(BRIDGE_URL); } catch (e) { return; }
+    try { ws = new WebSocket(BRIDGE_URL); } catch (e) { console.warn('[music-bridge] cannot open', BRIDGE_URL, e); return; }
     BR.ws = ws;
+    BR.opened = false;
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
+      BR.opened = true;
+      console.info('[music-bridge] connected');
       bridgeSend({ type: 'hello', rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000, mode: UP.mode, heights: UP.heights });
     };
     ws.onmessage = (ev) => {
@@ -782,15 +785,25 @@
       let msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.type === 'info') {
+        console.info('[music-bridge] info', msg);
         BR.info = msg;
         bridgeEnsureTap().then(() => { if (LOUD.ctx && UP.input) buildUpmix(); else renderSurround(); });
       } else if (msg.type === 'gone') {           // the app lost Windows Spatial Sound: the browser plays again
+        console.warn('[music-bridge] the app reports no Windows Spatial Sound');
         BR.info = null;
         if (LOUD.ctx && UP.input) buildUpmix(); else renderSurround();
       }
     };
-    const gone = () => {
+    const gone = (ev) => {
       if (BR.ws !== ws) return;
+      // once per outage; a refused connection (app not running, or the browser blocked access to this computer's
+      // local network) never opens, so it says so
+      if (!BR.reported || BR.opened) {
+        console.warn('[music-bridge] ' + (BR.opened ? 'connection lost' : 'could not connect to ' + BRIDGE_URL +
+          ' (app not running, or the browser blocked local network access for this site)'), ev && ev.code ? { code: ev.code, reason: ev.reason } : '');
+        BR.reported = true;
+      }
+      if (BR.opened) BR.reported = false;
       BR.ws = null;
       const had = BR.info;
       BR.info = null;
@@ -1684,6 +1697,79 @@
     }
     bindMedia(audio);
     bindMedia(videoEl);
+    // Playback watch (console only, "[music-watch]"): when the music hiccups or stops, was it the page, the
+    // network/server, or the audio engine? Each line carries what is needed to tell them apart:
+    //  - bufferedAheadS ~0 and networkState 2 (loading)  -> the data did not arrive (server / network)
+    //  - longTasksLast3s not empty                        -> the page's main thread was busy (client)
+    //  - "audio clock lagged"                             -> the browser's audio engine missed deadlines (client / system)
+    //  - "pause" with a large msSinceInput                -> nothing the user did paused it
+    const WATCH = { long: [], lastInput: 0, stallStart: 0, lastPos: -1, lastPosAt: 0, clk: null };
+    const watchState = () => {
+      const el = mediaEl;
+      let ahead = null;
+      try {
+        for (let i = 0; el && el.buffered && i < el.buffered.length; i++) {
+          if (el.buffered.start(i) <= el.currentTime + 0.1 && el.buffered.end(i) >= el.currentTime) ahead = +(el.buffered.end(i) - el.currentTime).toFixed(2);
+        }
+      } catch (e) { /* no buffered ranges */ }
+      const now = performance.now();
+      return {
+        at: new Date().toISOString(),
+        pos: el ? +el.currentTime.toFixed(2) : null,
+        dur: el && isFinite(el.duration) ? +el.duration.toFixed(1) : null,
+        paused: el ? el.paused : null,
+        readyState: el ? el.readyState : null,
+        networkState: el ? el.networkState : null,
+        bufferedAheadS: ahead,
+        ctx: LOUD.ctx ? LOUD.ctx.state : 'none',
+        longTasksLast3s: WATCH.long.filter((x) => now - x.at < 3000).map((x) => Math.round(x.dur) + 'ms'),
+        online: navigator.onLine,
+        bridge: BR.ws ? BR.ws.readyState : 'none',
+        msSinceInput: Math.round(now - WATCH.lastInput),
+        src: el ? String(el.currentSrc || '').slice(-70) : '',
+      };
+    };
+    const watchLog = (kind, extra) => console.warn('[music-watch] ' + kind, Object.assign(watchState(), extra || {}));
+    for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => { WATCH.lastInput = performance.now(); }, true);
+    try {
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) { WATCH.long.push({ at: e.startTime + e.duration, dur: e.duration }); }
+        if (WATCH.long.length > 40) WATCH.long.splice(0, WATCH.long.length - 40);
+      }).observe({ entryTypes: ['longtask'] });
+    } catch (e) { /* long-task timing not available */ }
+    for (const el of [audio, videoEl]) {
+      for (const ev of ['waiting', 'stalled', 'emptied', 'abort']) {
+        el.addEventListener(ev, () => { if (el === mediaEl && !el.paused) watchLog(ev); });
+      }
+      el.addEventListener('error', () => { if (el === mediaEl) watchLog('error', { code: el.error && el.error.code, message: el.error && el.error.message }); });
+      el.addEventListener('pause', () => { if (el === mediaEl && !el.ended) watchLog('pause'); });
+      el.addEventListener('ended', () => {
+        if (el !== mediaEl) return;
+        const d = el.duration;
+        if (isFinite(d) && d - el.currentTime > 2) watchLog('ended early', { missingS: +(d - el.currentTime).toFixed(1) });
+      });
+    }
+    setInterval(() => {
+      const el = mediaEl, now = performance.now();
+      // the position stopped moving while it should be playing
+      if (el && !el.paused && !el.ended && el.readyState > 0 && !document.hidden) {
+        if (el.currentTime === WATCH.lastPos) {
+          if (!WATCH.stallStart && now - WATCH.lastPosAt > 350) { WATCH.stallStart = WATCH.lastPosAt; watchLog('position stopped'); }
+        } else {
+          if (WATCH.stallStart) { watchLog('position moving again', { stalledMs: Math.round(now - WATCH.stallStart) }); WATCH.stallStart = 0; }
+          WATCH.lastPos = el.currentTime; WATCH.lastPosAt = now;
+        }
+      } else { WATCH.lastPos = -1; WATCH.lastPosAt = now; WATCH.stallStart = 0; }
+      // the audio engine's clock against the wall clock
+      const c = LOUD.ctx;
+      if (c && c.state === 'running') {
+        if (WATCH.clk) {
+          const wall = (now - WATCH.clk.wall) / 1000, aud = c.currentTime - WATCH.clk.aud;
+          if (wall - aud > 0.05) watchLog('audio clock lagged', { lagMs: Math.round((wall - aud) * 1000), overMs: Math.round(wall * 1000) });
+        }
+        WATCH.clk = { wall: now, aud: c.currentTime };
+      } else WATCH.clk = null;
+    }, 250);
     // Time listened, for the charts (js/listen_time.js, vault KSF-052):
     // counted on whichever element carries the song, so its music video counts
     // as the song (user, 2026-09-24). Checked, not assumed: a cached
