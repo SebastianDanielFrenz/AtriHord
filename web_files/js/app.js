@@ -244,13 +244,13 @@ function renderPipeStack(stackEl, p) {
       el.innerHTML = `
         <div class="pipe-task-label">▶ ${escHtml(t.progress || 'Running')}</div>
         <div class="pipe-task-url">${escHtml(t.url)}</div>
-        ${elapsed ? `<div class="pipe-task-elapsed">läuft seit ${elapsed}</div>` : ''}
+        ${elapsed ? `<div class="pipe-task-elapsed">running for ${elapsed}</div>` : ''}
         <button class="pipe-terminate-btn">Terminate</button>`;
     } else {
       const queuedSince = formatElapsed(t.created_at);
       el.innerHTML = `
         <div class="pipe-task-url">${escHtml(t.url)}</div>
-        ${queuedSince ? `<div class="pipe-task-elapsed">in Warteschlange seit ${queuedSince}</div>` : ''}`;
+        ${queuedSince ? `<div class="pipe-task-elapsed">queued for ${queuedSince}</div>` : ''}`;
     }
     el.onclick = () => openLogModal(t.id);
     if (t._role === 'current') {
