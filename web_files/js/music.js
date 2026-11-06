@@ -1160,13 +1160,44 @@
     SPK.raf = requestAnimationFrame(spkDraw);
   }
 
-  // The menu of the playing song's cover: the speaker chart first, then what the song's own menu has.
+  // The menu of the playing song's cover: the speaker chart, and the cover itself to the clipboard.
+  async function pngBlob(blob) {
+    if (blob.type === 'image/png') return blob;
+    const bmp = await createImageBitmap(blob);
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('no png'))), 'image/png'));
+  }
+  // The write starts inside the click and takes a promise of the picture: a browser lets a page write the
+  // clipboard only within the gesture, and the picture has to be fetched first.
+  async function copyCover(url, what) {
+    try {
+      const made = fetch(url, { credentials: 'same-origin' })
+        .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+        .then(pngBlob);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': made })]);
+      toast(`Copied the ${what} cover`);
+    } catch (e) {
+      toast(`The ${what} cover could not be copied`);
+    }
+  }
   function coverMenu(e) {
     const idx = Q.pos >= 0 ? Q.items[Q.pos] : -1;
-    const item = { text: SPK.el ? 'Hide speaker activity' : 'Speaker activity',
-      run: () => (SPK.el ? closeSpeakerChart() : openSpeakerChart()) };
-    if (idx < 0) { openMenu(e.currentTarget, [item], { x: e.clientX, y: e.clientY }); return; }
-    songMenu(e.currentTarget, idx, null, { x: e.clientX, y: e.clientY }, item);
+    const s = idx >= 0 ? LIB.songs[idx] : null;
+    const items = [{ text: SPK.el ? 'Hide speaker activity' : 'Speaker activity',
+      run: () => (SPK.el ? closeSpeakerChart() : openSpeakerChart()) }];
+    if (s && s.cover) {
+      items.push('-',
+        // above the ladder (96/300/600) the server answers with the picture inside the file
+        { text: 'Copy original cover', run: () => copyCover(coverUrl(s, 100000), 'original') },
+        { text: 'Copy upscaled cover', run: () => {
+          const up = typeof previewUpscale !== 'undefined' ? previewUpscale : null;
+          if (!up || !up.url || up.key !== s.ref) { toast('This cover has no upscaled copy yet'); return; }
+          copyCover(up.url, 'upscaled');
+        } });
+    }
+    openMenu(e.currentTarget, items, { x: e.clientX, y: e.clientY });
   }
 
   // One volume for both elements: it belongs to the player, not to whichever
