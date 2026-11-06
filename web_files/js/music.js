@@ -558,6 +558,14 @@
   // as it always did. Until Web Audio runs (a page may only start it from a
   // click or a key), and where it cannot, files are only turned down.
   const LOUD = { ctx: null, nodes: new Map(), off: false };
+  // A timeline of what the audio path did, for debugging a hitch: in the console, copy(JSON.stringify(musicRouteLog))
+  // (ms = performance.now(), so the gaps between lines are real time).
+  const RLOG = (window.musicRouteLog = []);
+  function rlog(ev, x) {
+    RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
+    if (RLOG.length > 300) RLOG.shift();
+  }
+  console.info('[music] build 2026-11-06d (musicRouteLog holds the audio timeline)');
   // iOS stops Web Audio when the screen locks - that would end playback in
   // the pocket; it also ignores element.volume, so it gets neither.
   const IOS = /iP(hone|od|ad)/.test(navigator.userAgent)
@@ -684,6 +692,7 @@
           LOUD.off = true;       // that element stays on element.volume
         }
       }
+      rlog('elements routed into the graph');
       buildUpmix();
       applyVolume();
       if (infoOpen) renderInfo();
@@ -700,9 +709,10 @@
   for (const m of [audio, videoEl]) {
     const nativePlay = m.play.bind(m);
     m.play = function () {
+      rlog('play() called', { routed: LOUD.nodes.size, ctx: LOUD.ctx ? LOUD.ctx.state : 'none', el: m === audio ? 'audio' : 'video' });
       if (LOUD.nodes.size || LOUD.off) return nativePlay();
       const routed = startLoudness();
-      return Promise.race([routed, new Promise((r) => setTimeout(r, 500))]).then(() => nativePlay());
+      return Promise.race([routed, new Promise((r) => setTimeout(r, 500))]).then(() => { rlog('element starts (after routing)', { routed: LOUD.nodes.size }); return nativePlay(); });
     };
   }
 
@@ -802,6 +812,7 @@
     ws.onopen = () => {
       BR.fails = 0;
       BR.windowStart = 0;
+      rlog('bridge: socket open');
       if (BR.state !== 'connected') console.info('Bridge connected at ' + BRIDGE_URL);
       BR.state = 'connected';
       bridgeSend({ type: 'hello', rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000, mode: UP.mode, heights: UP.heights });
@@ -811,6 +822,7 @@
       let msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.type === 'info') {
+        rlog('bridge: info', { bed: msg.bed, heights: msg.heights });
         BR.info = msg;
         // (a rebuild is a short mute and reconnect: not when the bridge route already stands, as two of them in a row
         // were an audible gap)
@@ -871,6 +883,7 @@
       BR.silent.gain.value = 0;
       node.connect(BR.silent).connect(LOUD.ctx.destination);
       BR.node = node;
+      rlog('bridge: tap ready');
       console.info('Bridge tap ready in ' + Math.round(performance.now() - t0) + ' ms (audio context was ' + state0 + ')');
     } catch (e) {
       BR.node = null;
@@ -953,6 +966,7 @@
     if (bridgeActive()) BR.waitDone = true;
     const waiting = !BR.waitDone && ((BR.info && !BR.node) || (BR.ws && !BR.info && BR.ws.readyState <= 1));   // connecting, or open and not yet answered
     if (waiting) {
+      rlog('buildUpmix: silent, waiting for the bridge', { info: !!BR.info, node: !!BR.node, ws: BR.ws ? BR.ws.readyState : 'none' });
       clearTimeout(BR.waitT);
       BR.waitT = setTimeout(() => { BR.waitDone = true; buildUpmix(); }, 600);
       renderSurround();
@@ -960,6 +974,7 @@
     }
     const dest = ctx.destination;
     const max = dest.maxChannelCount || 2;
+    rlog('buildUpmix: route chosen', { bridge: bridgeActive(), max });
     if (bridgeActive()) {
       UP.layout = null;
       UP.viaBridge = true;
@@ -1828,6 +1843,8 @@
         if (WATCH.long.length > 40) WATCH.long.splice(0, WATCH.long.length - 40);
       }).observe({ entryTypes: ['longtask'] });
     } catch (e) { /* long-task timing not available */ }
+    for (const ev of ['playing', 'pause', 'waiting', 'stalled', 'seeking', 'seeked']) audio.addEventListener(ev, () => rlog('audio element: ' + ev, { pos: +audio.currentTime.toFixed(2) }));
+    LOUD.ctx && LOUD.ctx.addEventListener('statechange', () => rlog('ctx state: ' + LOUD.ctx.state));
     for (const el of [audio, videoEl]) {
       for (const ev of ['waiting', 'stalled', 'emptied', 'abort']) {
         el.addEventListener(ev, () => { if (el === mediaEl && !el.paused) watchLog(ev); });
