@@ -773,11 +773,11 @@
     let ws;
     try { ws = new WebSocket(BRIDGE_URL); } catch (e) { console.warn('[music-bridge] cannot open', BRIDGE_URL, e); return; }
     BR.ws = ws;
-    BR.opened = false;
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
-      BR.opened = true;
-      console.info('[music-bridge] connected');
+      BR.fails = 0;
+      if (BR.state !== 'connected') console.info('Bridge connected at ' + BRIDGE_URL);
+      BR.state = 'connected';
       bridgeSend({ type: 'hello', rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000, mode: UP.mode, heights: UP.heights });
     };
     ws.onmessage = (ev) => {
@@ -785,7 +785,6 @@
       let msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.type === 'info') {
-        console.info('[music-bridge] info', msg);
         BR.info = msg;
         bridgeEnsureTap().then(() => { if (LOUD.ctx && UP.input) buildUpmix(); else renderSurround(); });
       } else if (msg.type === 'gone') {           // the app lost Windows Spatial Sound: the browser plays again
@@ -796,14 +795,11 @@
     };
     const gone = (ev) => {
       if (BR.ws !== ws) return;
-      // once per outage; a refused connection (app not running, or the browser blocked access to this computer's
-      // local network) never opens, so it says so
-      if (!BR.reported || BR.opened) {
-        console.warn('[music-bridge] ' + (BR.opened ? 'connection lost' : 'could not connect to ' + BRIDGE_URL +
-          ' (app not running, or the browser blocked local network access for this site)'), ev && ev.code ? { code: ev.code, reason: ev.reason } : '');
-        BR.reported = true;
-      }
-      if (BR.opened) BR.reported = false;
+      // One line per change of state, not per attempt. (The browser itself prints a red "WebSocket connection
+      // failed" for every refused attempt; page code cannot silence that, so the retries slow down instead.)
+      if (BR.state === 'connected') { console.warn('Bridge connection lost. Attempting to reconnect.'); BR.state = 'lost'; }
+      else if (!BR.state) { console.warn('Bridge not reachable at ' + BRIDGE_URL + ' (app not running, or the browser blocked local network access for this site)'); BR.state = 'unreachable'; }
+      BR.fails = (BR.fails || 0) + 1;
       BR.ws = null;
       const had = BR.info;
       BR.info = null;
@@ -812,7 +808,7 @@
         else renderSurround();
       }
       clearTimeout(BR.retry);
-      BR.retry = setTimeout(bridgeConnect, 8000);       // the app may be started later
+      BR.retry = setTimeout(bridgeConnect, BR.fails > 6 ? 30000 : BR.fails > 2 ? 15000 : 8000);   // the app may be started later
     };
     ws.onclose = gone;
     ws.onerror = () => { /* onclose follows */ };
