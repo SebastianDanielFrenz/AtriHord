@@ -11,12 +11,13 @@
   <!-- The redesign: scoped to body.next-ui, loaded after main.css, which stays untouched. -->
   <link rel="stylesheet" href="/css/leaflet.css?v=1">
   <link rel="stylesheet" href="/css/media-next.css?v=15">
+  <link rel="stylesheet" href="/css/next-downloads.css?v=1">
 </head>
 <body class="media-page next-ui" data-dest="folders">
   <!-- Top bar: brand, the search pill (every id media.js binds is in it), user widget. The
        sidebar and the phone tab bar below it drive the same functions the old buttons did. -->
   <header class="nx-topbar" id="nxTopbar">
-    <a href="/media-next.html" class="nx-brand" id="nxBrand" aria-label="media-dl, back to the folders">
+    <a href="/media.html" class="nx-brand" id="nxBrand" aria-label="media-dl, back to the folders">
       <svg class="nx-logo" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5.5"/><path d="M10 8v8l6-4z"/></svg>
       <span class="nx-brand-name">media-dl</span>
     </a>
@@ -161,7 +162,7 @@
         <a class="nx-row" id="genreMapLink" href="/genres.html" title="The music library as a map: tracks that sound alike sit together"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5l6-2 6 2 6-2v13l-6 2-6-2-6 2z"/><path d="M9 4.5v13M15 6.5v13"/></svg><span class="nx-label">Genre map</span></a>
         <button type="button" class="nx-row" id="navVr" hidden title="View in VR"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="7.5" width="19" height="9.5" rx="3"/><path d="M9 17c.8-1.5 1.8-2.2 3-2.2s2.2.7 3 2.2"/></svg><span class="nx-label">VR</span></button>
         <button type="button" class="nx-row nx-phone-only" id="navImageSearch"  title="Find visually similar pictures"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5a2 2 0 0 1 2-2h1.6l1.2-1.8h6.4l1.2 1.8H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.3"/></svg><span class="nx-label">Search by image</span></button>
-        <a class="nx-row" id="navDownloads" href="/index.html" data-admin-only title="The download dashboard"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></svg><span class="nx-label">Downloads</span></a>
+        <button type="button" class="nx-row" id="navDownloads" data-nav="downloads" data-admin-only title="Add links, watch and steer the download queue"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></svg><span class="nx-label">Downloads</span></button>
       </div>
       <!-- Admin only: shown once /api/me says admin (next-shell.js). -->
       <div class="nx-group" id="nxAdminGroup" hidden>
@@ -478,6 +479,40 @@
       <div class="nx-trash-more" id="nxTrashMore" hidden><button type="button" class="btn btn-quiet" id="nxTrashMoreBtn">Show more</button></div>
     </section>
 
+    <!-- Downloads (admin): js/next-downloads.js fills it; body[data-dest="downloads"] shows it (css/next-downloads.css). -->
+    <section class="nx-dl" id="nxDownloads" aria-labelledby="nxDlTitle" hidden>
+      <div class="nx-dl-head"><h2 id="nxDlTitle">Downloads</h2><span class="nx-dl-sum" id="nxDlSum"></span></div>
+      <div class="nx-dl-cookie" id="nxDlCookie" role="status" hidden></div>
+      <form class="nx-dl-add" id="nxDlForm">
+        <textarea id="nxDlUrl" rows="1" spellcheck="false" autocomplete="off" aria-label="Links to download"
+                  placeholder="Paste a link to download - several at once, one per line"></textarea>
+        <span class="nx-dl-chip" id="nxDlSite" hidden></span>
+        <button type="submit" class="btn" id="nxDlGo">Download</button>
+      </form>
+      <div class="nx-dl-formnote" id="nxDlFormNote" role="alert" hidden></div>
+      <div class="nx-dl-hint">YouTube, Twitter / X, Pixiv, Civitai, Patreon, Bluesky, DeviantArt, Discord, Instagram, Danbooru, Bilibili</div>
+      <div class="nx-dl-tabs" role="tablist" aria-label="Downloads">
+        <button type="button" role="tab" data-dltab="active">Active <span class="nx-dl-count"></span></button>
+        <button type="button" role="tab" data-dltab="done">Finished <span class="nx-dl-count"></span></button>
+        <button type="button" role="tab" data-dltab="failed">Failed <span class="nx-dl-count"></span></button>
+        <button type="button" role="tab" data-dltab="sites">Sites</button>
+        <button type="button" role="tab" data-dltab="system">System</button>
+      </div>
+      <div id="nxDlList"></div>
+      <div id="nxDlSites" hidden></div>
+      <div id="nxDlSystem" hidden>
+        <div class="nx-dl-stats" id="nxDlStats"></div>
+        <h3 class="nx-dl-sub">Library indexing</h3>
+        <div id="nxDlIndex"></div>
+      </div>
+      <aside class="nx-dl-drawer" id="nxDlDrawer" hidden aria-label="Task log">
+        <div class="nx-dl-drawer-head"><h3 id="nxDlDrawerTitle">Task</h3>
+          <button type="button" class="nx-dl-btn" id="nxDlDrawerClose">Close</button></div>
+        <div class="nx-dl-drawer-url" id="nxDlDrawerUrl"></div>
+        <pre class="nx-dl-log" id="nxDlLog"></pre>
+      </aside>
+    </section>
+
     <!-- Upload (admin): js/next-upload.js fills it; body[data-dest="upload"] shows it (css/media-next.css).
          Nothing is sent until the Upload button is pressed. -->
     <section class="nx-upload" id="nxUpload" aria-labelledby="nxUploadTitle" hidden>
@@ -722,7 +757,8 @@
   <script src="/js/next-map.js?v=1"></script>
   <script src="/js/next-upload.js?v=1"></script>
   <script src="/js/next-account.js?v=1"></script>
-  <script src="/js/next-shell.js?v=13"></script>
+  <script src="/js/next-downloads.js?v=1"></script>
+  <script src="/js/next-shell.js?v=14"></script>
   <script src="/js/atrihord-user.js" defer></script>
 </body>
 </html>

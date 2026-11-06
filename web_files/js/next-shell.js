@@ -44,8 +44,8 @@
   // ---------------------------------------------------------------------------
   // Trash (js/next-trash.js) and Upload (js/next-upload.js) are destinations like the others; Libraries,
   // Trash and Upload are the admin's.
-  const PSEUDO = ['timeline', 'explore', 'map', 'recent', 'shares', 'libraries', 'trash', 'upload'];
-  const ADMIN_PSEUDO = ['libraries', 'trash', 'upload'];
+  const PSEUDO = ['timeline', 'explore', 'map', 'recent', 'shares', 'libraries', 'trash', 'upload', 'downloads'];
+  const ADMIN_PSEUDO = ['libraries', 'trash', 'upload', 'downloads'];
   let pseudo = PSEUDO.includes(location.hash.slice(1)) ? location.hash.slice(1) : null;
 
   // Who is looking, asked once: /api/me is cheap and media.js asks it too, but asking here keeps this
@@ -131,6 +131,7 @@
     if (dest === 'map' && window.NextMap) window.NextMap.open();
     if (dest === 'trash' && window.NextTrash) window.NextTrash.open();
     if (dest === 'upload' && window.NextUpload) window.NextUpload.open();
+    if (dest === 'downloads' && window.NextDownloads) window.NextDownloads.open();
     const state = { mediaPath: currentMediaPath, mediaRoot: currentMediaRoot, nextDest: dest };
     const url = mediaUrlFor(currentMediaPath, currentMediaRoot) + '#' + dest;
     if (had) history.replaceState(state, '', url);
@@ -501,6 +502,7 @@
     if (pseudo === 'map' && window.NextMap) window.NextMap.open();
     if (pseudo === 'trash' && window.NextTrash) window.NextTrash.open();
     if (pseudo === 'upload' && window.NextUpload) window.NextUpload.open();
+    if (pseudo === 'downloads' && window.NextDownloads) window.NextDownloads.open();
   });
 
   // Reload on #recent: media.js's first replaceState drops the hash and the state, so it is put
@@ -527,6 +529,7 @@
         syncNav();
       } else if (admin && pseudo === 'trash' && window.NextTrash) window.NextTrash.open();
       else if (admin && pseudo === 'upload' && window.NextUpload) window.NextUpload.open();
+      else if (admin && pseudo === 'downloads' && window.NextDownloads) window.NextDownloads.open();
     });
   });
 
@@ -629,6 +632,7 @@
   $('navLibraries').addEventListener('click', () => goPseudo('libraries'));
   $('navTrash').addEventListener('click', () => goPseudo('trash'));
   $('navUpload').addEventListener('click', () => goPseudo('upload'));
+  $('navDownloads').addEventListener('click', () => goPseudo('downloads'));
   $('nxBrand').addEventListener('click', (e) => {
     if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
