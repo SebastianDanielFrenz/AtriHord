@@ -1134,11 +1134,14 @@
     const g = cv.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, h);
-    const css = getComputedStyle(document.documentElement);
+    // From the panel itself, not from :root: the page's theme tokens can resolve differently there (the labels came
+    // out black on the dark panel). The panel's own heading and info line are what is readable on it.
+    const css = getComputedStyle(SPK.el);
     const accent = css.getPropertyValue('--accent').trim() || '#4c8dff';
-    const muted = css.getPropertyValue('--muted').trim() || '#888';
-    const ink = css.getPropertyValue('--ink').trim() || '#eee';
-    const line = css.getPropertyValue('--line-strong').trim() || '#444';
+    const muted = getComputedStyle($('muSpkInfo')).color || '#9aa0a6';
+    const heading = SPK.el.querySelector('strong');
+    const ink = (heading && getComputedStyle(heading).color) || '#eee';
+    const line = css.getPropertyValue('--line-strong').trim() || '#555';
     const cx = w / 2, cy = h / 2 + 4, R = Math.min(w, h) / 2 - 30;
     const ok = spkTap();
     const lv = { L: 0, R: 0, M: 0 };
