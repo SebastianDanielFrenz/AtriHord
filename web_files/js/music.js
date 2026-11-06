@@ -565,7 +565,32 @@
     RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
     if (RLOG.length > 300) RLOG.shift();
   }
-  console.info('[music] build 2026-11-06d (musicRouteLog holds the audio timeline)');
+  console.info('[music] build 2026-11-06e (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start)');
+  // The level of the signal inside the page for 8 s from the moment the elements are routed, every 25 ms:
+  // [ms, rms, element position, blocks sent to the bridge since the previous row, socket backlog]. A hole in the
+  // sound that comes from the page shows as rms 0 (or a position that stands still); a hole that does not show here
+  // is downstream (the bridge, Windows, the device).
+  const LEVELS = (window.musicLevelLog = []);
+  const RM = { on: false, blocks: 0 };
+  function startRouteMeter() {
+    if (RM.on || !LOUD.ctx) return;
+    RM.on = true;
+    const an = LOUD.ctx.createAnalyser();
+    an.fftSize = 512;
+    for (const node of LOUD.nodes.values()) node.connect(an);
+    const data = new Float32Array(512);
+    const t0 = performance.now();
+    let lastBlocks = 0;
+    const iv = setInterval(() => {
+      an.getFloatTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      LEVELS.push([Math.round(performance.now()), +Math.sqrt(sum / data.length).toFixed(4), +mediaEl.currentTime.toFixed(3),
+        RM.blocks - lastBlocks, BR.ws ? BR.ws.bufferedAmount : -1]);
+      lastBlocks = RM.blocks;
+      if (performance.now() - t0 > 8000) { clearInterval(iv); try { an.disconnect(); } catch (e) { /* gone */ } }
+    }, 25);
+  }
   // iOS stops Web Audio when the screen locks - that would end playback in
   // the pocket; it also ignores element.volume, so it gets neither.
   const IOS = /iP(hone|od|ad)/.test(navigator.userAgent)
@@ -693,6 +718,7 @@
         }
       }
       rlog('elements routed into the graph');
+      startRouteMeter();
       buildUpmix();
       applyVolume();
       if (infoOpen) renderInfo();
@@ -877,6 +903,7 @@
       URL.revokeObjectURL(url);
       const node = new AudioWorkletNode(LOUD.ctx, 'ah-tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
       node.port.onmessage = (ev) => {
+        RM.blocks++;
         if (BR.ws && BR.ws.readyState === 1 && BR.ws.bufferedAmount < (1 << 20)) BR.ws.send(ev.data.buffer);
       };
       BR.silent = LOUD.ctx.createGain();       // keeps the worklet pulled without making a sound
