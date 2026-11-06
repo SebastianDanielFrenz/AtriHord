@@ -831,8 +831,15 @@
   }
 
   // The tap: an AudioWorklet on the stereo bus whose blocks go to the app.
-  async function bridgeEnsureTap() {
-    if (BR.node || BR.loading || !LOUD.ctx || !LOUD.ctx.audioWorklet) return;
+  // One shared promise: whoever asks while it is being made waits for the same tap (a caller that returned at once
+  // used to leave the page on the browser's own 7.1 output until the next toggle).
+  function bridgeEnsureTap() {
+    if (BR.node || !LOUD.ctx || !LOUD.ctx.audioWorklet) return Promise.resolve();
+    if (!BR.tapP) BR.tapP = bridgeMakeTap().finally(() => { BR.tapP = null; });
+    return BR.tapP;
+  }
+
+  async function bridgeMakeTap() {
     BR.loading = true;
     try {
       const url = URL.createObjectURL(new Blob([TAP_CODE], { type: 'text/javascript' }));
@@ -916,7 +923,9 @@
     UP.nodes = [];
     if (SPK.sp) { try { UP.input.connect(SPK.sp); } catch (e) { /* as is */ } }
     bridgeConnect();
-    if (!BR.node) bridgeEnsureTap();
+    // The app has answered but its tap is still being made: route through the browser for now and switch over the
+    // moment the tap exists, instead of staying on the browser's output until the next toggle.
+    if (!BR.node && BR.info) bridgeEnsureTap().then(() => { if (BR.node && bridgeActive()) buildUpmix(); });
     const dest = ctx.destination;
     const max = dest.maxChannelCount || 2;
     if (bridgeActive()) {
