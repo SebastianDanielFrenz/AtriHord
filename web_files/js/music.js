@@ -928,6 +928,18 @@
     // The app has answered but its tap is still being made: route through the browser for now and switch over the
     // moment the tap exists, instead of staying on the browser's output until the next toggle.
     if (!BR.node && BR.info) bridgeEnsureTap().then(() => { if (BR.node && bridgeActive()) buildUpmix(); });
+    // At the first start the bridge is usually a few milliseconds from being ready (connecting, or its tap being
+    // made). Playing the browser's own 7.1 meanwhile and moving over afterwards is audible: a different sound and
+    // a hitch. So wait in silence, at most 600 ms, and start on the bridge route; after that (or without a bridge)
+    // the browser plays as before.
+    if (bridgeActive()) BR.waitDone = true;
+    const waiting = !BR.waitDone && ((BR.info && !BR.node) || (BR.ws && BR.ws.readyState === 0 && !BR.info));
+    if (waiting) {
+      clearTimeout(BR.waitT);
+      BR.waitT = setTimeout(() => { BR.waitDone = true; buildUpmix(); }, 600);
+      renderSurround();
+      return;
+    }
     const dest = ctx.destination;
     const max = dest.maxChannelCount || 2;
     if (bridgeActive()) {
