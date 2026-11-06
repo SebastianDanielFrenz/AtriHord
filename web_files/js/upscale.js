@@ -85,6 +85,13 @@ function painted() {
 // in the worker none. The swap below then handles a picture a quarter of the size.
 // null = could not (no support, a failed fetch, the copy is not larger than the screen): the original
 // url is swapped in as before.
+//
+// KNOWN ISSUE of that fallback: when it is taken for a copy much larger than the screen (no Worker /
+// OffscreenCanvas, a blocked blob worker, a failed fetch or encode, a 30 s timeout), swapPicture decodes
+// and rasterises the full copy on the page's main thread - for tens of megapixels a 100-200 ms task that
+// is KNOWN TO CAUSE AUDIO HITCHES on the music page while a song plays (Web Audio fed by a media element
+// glitches when the main thread stalls). It is kept only so the cover still appears; it is a degraded
+// path, not a supported one. A copy no larger than the screen takes it by design and is not affected.
 const LIGHTER_WORKER = `self.onmessage = async (e) => {
   try {
     const { url, w, h } = e.data;
@@ -128,6 +135,12 @@ async function lighterCopy(url, width, height) {
 
 async function swapPicture(img, url, stillWanted, before, dims) {
   const light = dims ? await lighterCopy(url, dims.width, dims.height) : null;
+  // No light copy for a large picture: the full-size decode below runs on the main thread and is known
+  // to cause audio hitches (see lighterCopy). Said once on the console so it can be told from other causes.
+  if (!light && dims && Math.max(dims.width || 0, dims.height || 0) * (dims.height || 0) > 2.5e7) {
+    console.warn('[upscale] swapping in a ' + dims.width + 'x' + dims.height
+      + ' picture on the main thread (the worker path did not run): this can cause an audio hitch');
+  }
   if (light) {
     const r = await swapPicture(img, light, stillWanted, before);
     setTimeout(() => URL.revokeObjectURL(light), 60000);
