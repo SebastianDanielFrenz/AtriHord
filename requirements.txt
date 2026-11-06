@@ -1,0 +1,11 @@
+# AtriHord server (Python 3.10+). Install into a virtualenv:
+#   python3 -m venv venv && venv/bin/pip install -r requirements.txt
+flask>=3.0
+psutil
+mutagen        # GPL-2.0-or-later: reads/writes audio tags (see THIRD_PARTY.md)
+pillow
+numpy
+requests
+yt-dlp
+gallery-dl     # GPL-2.0: the downloader for twitter, bluesky, deviantart, ...
+textual        # only for the terminal UI, tui.py

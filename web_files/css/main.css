@@ -1,0 +1,3572 @@
+/* The palette now comes from the KSF design language: atrihord.css defines the
+   tokens and atrihord-compat.css maps the legacy --bg-color/--text-main/…
+   names below onto them. Both are loaded before this file. When a rule here
+   is next touched, switch it to the token name directly. */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+}
+
+body {
+  background-color: var(--page);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 1rem;
+  gap: 1.5rem;
+}
+
+.container {
+  width: 100%;
+  max-width: 1100px;
+}
+
+/* The media library is a browsing surface, not a form: on a wide screen its
+   grids should use the screen rather than sit in a column sized for reading.
+   Media page only - the dashboard and the share page keep 1100px. What is
+   text or a form stays at the reading width, centred, so a search box or a
+   hint line does not run the full width of a 2000px window. */
+body.media-page .container {
+  max-width: min(96vw, 2600px);
+}
+body.media-page .media-search-bar,
+body.media-page #mediaSearchNote,
+body.media-page .shares-card {
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* Results used to scroll inside half the window height. They get what is
+   left of the window below the header and the search bar instead, and never
+   less than the old half. */
+body.media-page #searchResultsScroll {
+  max-height: max(50vh, calc(100vh - 20rem));
+  max-height: max(50dvh, calc(100dvh - 20rem));
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.logo {
+  max-width: 120px;
+  height: auto;
+  margin-bottom: 0.75rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  color: var(--ink);
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+/* Base Card Styling */
+.card {
+  background: var(--surface);
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line);
+}
+
+/* Default Mobile Styles: Only display the download box */
+.dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.tasks-box {
+  display: none; /* Hide active tasks on mobile */
+}
+
+/* Desktop/Laptop Styles (Screens >= 768px) */
+@media (min-width: 768px) {
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* Left (Download) & Right (Tasks) */
+    align-items: start;
+  }
+
+  .tasks-box {
+    display: block; /* Show active tasks on desktop */
+  }
+}
+
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+input[type="text"],
+input[type="password"],
+textarea {
+  width: 100%;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background-color: var(--surface-2);
+  color: var(--ink);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+input:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+.btn {
+  width: 100%;
+  padding: 0.85rem;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: opacity var(--dur);
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+/* A quiet button - sized to its label, reading as a control rather than as a
+   call to action. `.btn` alone is a full-width accent block because everywhere
+   else it is a form's submit button, so `btn btn-quiet` without this rule drew
+   a page-wide blue slab where a small "Back to files" was meant. */
+.btn-quiet {
+  width: auto;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.btn-quiet:hover {
+  opacity: 1;
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.task-card {
+  background: var(--surface-2);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.badge-youtube    { background: #ef4444; color: #fff; }
+.badge-twitter    { background: #3b82f6; color: #fff; }
+.badge-pixiv      { background: #0096fa; color: #fff; }
+.badge-danbooru   { background: #06b6d4; color: #000; }
+.badge-civitai    { background: #8b5cf6; color: #fff; }
+.badge-patreon    { background: #ff424d; color: #fff; }
+.badge-bluesky    { background: #1185fe; color: #fff; }
+.badge-deviantart { background: #05cc47; color: #000; }
+.badge-discord    { background: #5865f2; color: #fff; }
+
+.task-progress {
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.task-card {
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.task-card:hover {
+  border-color: var(--accent);
+  background-color: var(--surface-hover);
+}
+
+/* Modal Overlay */
+/* dvh, not vh: on mobile browsers 100vh is the height with the address bar
+   RETRACTED, so a 100vh box is taller than what you can actually see while
+   the bar is showing - and the overflow goes off the TOP, hiding the
+   preview's own header (filename, info button, close). dvh tracks the
+   visible viewport, which is also what window.innerHeight reports, so the
+   JS sizing in applyMediaSizing() and this CSS finally agree. The plain
+   vh/% line above stays as the fallback for anything without dvh. */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  background-color: rgba(0, 0, 0, 0.75);
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+}
+
+/* Modal Content Box */
+.modal-content {
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 700px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modal-header h3 {
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+.close-btn {
+  /* It is a real <button> so it can be tabbed to and announced, but visually it
+     should stay the bare glyph the design intends -- hence the reset, without
+     which the browser draws its default border and grey plate around it. */
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0 0.25rem;
+  line-height: 1;
+  font-family: inherit;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .close-btn:hover {
+    color: var(--ink);
+  }
+}
+
+/* Keyboard users need to see where they are; mouse users never see this. */
+.close-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+  color: var(--ink);
+}
+
+/* Log Display Output */
+.modal-log-body {
+  background: var(--page);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  flex-grow: 1;
+  max-height: 60vh;
+}
+
+/* Top Bar / Logout Styling */
+.top-bar {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Advanced Mode Toggle */
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.advanced-toggle input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Advanced Mode: full alternate layout — compact download box top-left,
+   system stats bottom-left, wide Kanban pipeline board on the right. */
+#normalContainer {
+  display: block;
+}
+
+.advanced-layout {
+  display: none;
+  width: 100%;
+  max-width: 2400px;
+  grid-template-columns: 320px 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "download pipes"
+    "stats    pipes";
+  gap: 1.5rem;
+  align-items: start;
+  min-height: calc(100vh - 6rem);
+}
+
+body.advanced-mode #normalContainer {
+  display: none;
+}
+
+body.advanced-mode .advanced-layout {
+  display: grid;
+}
+
+.adv-download-slot {
+  grid-area: download;
+}
+
+/* The download-box card gets physically moved in here in advanced mode;
+   shrink its padding since it only needs to hold the compact URL form. */
+.adv-download-slot .download-box {
+  padding: 1.25rem;
+}
+
+.adv-download-slot .download-box h2 {
+  display: none;
+}
+
+.adv-stats-slot {
+  grid-area: stats;
+  align-self: stretch;
+}
+
+.adv-pipes-slot {
+  grid-area: pipes;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+}
+
+.stat-tile {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.stat-label {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 0.3rem;
+  color: var(--ink);
+}
+
+.pipe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.pipe-col {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+}
+
+.pipe-col-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.pipe-col-meta {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin: 0.35rem 0 0.75rem;
+}
+
+.pipe-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pipe-empty {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+  padding: 0.35rem 0;
+}
+
+/* Current (top, actively downloading) task in a pipe column */
+.pipe-current-task {
+  padding: 0.5rem 0.6rem;
+  background: rgba(56, 189, 248, 0.1);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  word-break: break-all;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.pipe-current-task:hover {
+  background: rgba(56, 189, 248, 0.2);
+}
+
+.pipe-terminate-btn {
+  display: inline-block;
+  margin-top: 0.4rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--down);
+  border: none;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: bold;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.pipe-terminate-btn:hover {
+  opacity: 0.85;
+}
+
+.pipe-task-label {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 0.2rem;
+}
+
+.pipe-task-url {
+  color: var(--muted);
+}
+
+.pipe-task-elapsed {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+/* Queued task, waiting further down the pipe */
+.pipe-upcoming-item {
+  padding: 0.35rem 0.6rem;
+  background: rgba(148, 163, 184, 0.08);
+  border-left: 3px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  word-break: break-all;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.pipe-upcoming-item:hover {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.logout-btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background-color: var(--line);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 6px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.logout-btn:hover {
+  background-color: var(--down);
+  color: #fff;
+}
+
+.nav-link {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background-color: transparent;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.nav-link:hover {
+  background-color: var(--line);
+  color: var(--ink);
+}
+
+/* Media Library */
+.media-search-bar {
+  margin-bottom: 1.5rem;
+}
+
+.media-search-bar input {
+  width: 100%;
+}
+
+.media-browser-card {
+  padding: 1.5rem;
+}
+
+.media-browser-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.media-breadcrumb {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* Acts on the folder currently being browsed - the one thing the grid's
+   own tiles can't offer, since it has no tile of its own. */
+.folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: auto;
+}
+
+.folder-actions button {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.folder-actions button:hover {
+  border-color: var(--accent);
+}
+
+.media-sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.media-sort-bar select {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.media-sort-bar button {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.media-sort-bar button:hover,
+.media-sort-bar select:hover {
+  border-color: var(--accent);
+}
+
+.media-sort-status {
+  min-width: 5.5rem;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* Folder totals, shown once a size/date sort has fetched them. */
+.media-tile-folder-meta {
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crumb {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.crumb:hover {
+  text-decoration: underline;
+}
+
+.crumb-sep {
+  color: var(--muted);
+}
+
+.media-loading,
+.media-error,
+.media-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 1rem 0;
+}
+
+.media-error {
+  color: var(--down);
+}
+
+.context-menu {
+  display: none;
+  position: fixed;
+  z-index: 2000;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.4rem;
+  min-width: 160px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.context-menu-item {
+  padding: 0.55rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--ink);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover {
+  background: rgba(148, 163, 184, 0.15);
+}
+
+.shares-card {
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.shares-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.shares-pool-create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.shares-pool-create input {
+  flex: 1 1 200px;
+  width: auto;
+}
+
+.shares-pool-create .btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0.85rem 1.25rem;
+}
+
+.shares-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.share-row.share-revoked {
+  opacity: 0.55;
+}
+
+.share-info {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.share-kind-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.share-kind-pool {
+  background: var(--accent);
+  color: #000;
+}
+
+.share-label {
+  font-size: 0.875rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.share-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.share-action-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.share-action-btn:hover {
+  background: rgba(148, 163, 184, 0.15);
+}
+
+.share-revoke-btn {
+  border-color: var(--down);
+  color: var(--down);
+}
+
+.share-revoke-btn:hover {
+  background-color: var(--down);
+  color: #fff;
+}
+
+.share-revoked-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.share-pool-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem 0.85rem 0.5rem 1.5rem;
+  margin-top: -0.25rem;
+}
+
+.share-pool-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Media roots ("Libraries") admin */
+.root-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.root-info {
+  min-width: 0;
+}
+
+.root-name {
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.root-path {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+
+.root-path-missing {
+  color: var(--down);
+}
+
+.root-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.root-guest-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  margin: 0;
+}
+
+.root-guest-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.share-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.share-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.share-thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.share-thumb-fallback img {
+  display: none;
+}
+
+/* Public share page cover (top-left of the header, next to the title) */
+.share-page-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  text-align: left;
+}
+
+.share-page-cover {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+}
+
+/* Add-to-Pool overlay - a scrollable, thumbnailed picker over the media
+   content, replacing the earlier prompt()-based flow. */
+.pool-picker-content {
+  max-width: 420px;
+  width: 100%;
+  height: auto;
+  max-height: 80vh;
+}
+
+.pool-picker-create {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.pool-picker-create input {
+  flex: 1;
+  width: auto;
+}
+
+.pool-picker-create .btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0.85rem 1rem;
+  white-space: nowrap;
+}
+
+.pool-picker-list {
+  overflow-y: auto;
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* Custom scrollbar for every internally-scrolling panel, replacing the
+   native/OS one so it matches the dark theme instead of cutting a bright
+   system-colored strip through the middle of a card. */
+.recent-media-scroll,
+.pool-picker-list,
+.shares-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.recent-media-scroll::-webkit-scrollbar,
+.pool-picker-list::-webkit-scrollbar,
+.shares-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.recent-media-scroll::-webkit-scrollbar-track,
+.pool-picker-list::-webkit-scrollbar-track,
+.shares-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.recent-media-scroll::-webkit-scrollbar-thumb,
+.pool-picker-list::-webkit-scrollbar-thumb,
+.shares-list::-webkit-scrollbar-thumb {
+  background-color: var(--line);
+  border-radius: 4px;
+}
+
+.recent-media-scroll::-webkit-scrollbar-thumb:hover,
+.pool-picker-list::-webkit-scrollbar-thumb:hover,
+.shares-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+}
+
+.pool-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.pool-picker-row:hover {
+  background: rgba(148, 163, 184, 0.15);
+}
+
+.pool-picker-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.pool-picker-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pool-picker-thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+}
+
+.pool-picker-thumb-fallback img {
+  display: none;
+}
+
+.pool-picker-info {
+  min-width: 0;
+}
+
+.pool-picker-name {
+  font-size: 0.9rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.pool-picker-count {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.recent-media-card {
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.search-results-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+
+.recent-media-scroll {
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.recent-media-scroll .media-loading,
+.recent-media-scroll .media-empty {
+  text-align: center;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.media-tile {
+  position: relative;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.4rem;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.tile-remove-btn {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.tile-remove-btn:hover {
+  background: var(--down);
+}
+
+.media-tile:hover {
+  background: rgba(148, 163, 184, 0.18);
+  transform: translateY(-2px);
+}
+
+.media-tile-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.media-tile-thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.media-tile-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-tile-name {
+  font-size: 0.78rem;
+  color: var(--ink);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: 2.6em;
+  overflow: hidden;
+}
+
+.media-tile-size {
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Info button + panel in the preview header */
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-shrink: 0;
+}
+
+.info-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+/* Only where there is a real pointer: a phone keeps :hover on the last thing
+   tapped, so the heart stayed accent-coloured after a tap. */
+@media (hover: hover) {
+  .info-btn:hover {
+    color: var(--accent);
+  }
+}
+
+/* Phones (2026-09-16, "the favorite button should not be highlightable like
+   this"): no tap-highlight box, no long-press selection of the glyph, no iOS
+   callout. A slight dim while pressed replaces the browser's flash; keyboard
+   focus keeps atrihord.css's :focus-visible ring. */
+.info-btn,
+.close-btn {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.info-btn:active,
+.close-btn:active {
+  opacity: 0.65;
+}
+
+/* Convert to 3D: the preview header's button and the item's status beside it. */
+.convert3d-btn {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.convert3d-btn:disabled { opacity: 0.45; cursor: default; }
+.convert3d-status {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.convert3d-status a { color: var(--accent); }
+.convert3d-status[hidden], .convert3d-btn[hidden] { display: none; }
+
+.media-info-panel {
+  position: absolute;
+  top: 3.5rem;
+  right: 1rem;
+  z-index: 5;
+  max-width: min(420px, calc(100vw - 2rem));
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+  /* Theme tokens, not a fixed colour: the text below uses --ink and --muted,
+     which flip in light mode, so a hard-coded dark slate here left the values
+     near-black on near-black - only the grey labels were still readable. */
+  background: var(--surface, #1a1a19);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop, 0 8px 32px rgba(0, 0, 0, 0.45));
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.media-info-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.media-info-panel::-webkit-scrollbar-thumb {
+  background-color: var(--line);
+  border-radius: 4px;
+}
+
+.media-info-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.9rem;
+  margin: 0;
+}
+
+.media-info-list dt {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.media-info-list dd {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* Fixed frame size regardless of what's previewed (image/video/audio/
+   fallback) or that item's native resolution - only the fullscreen-media
+   override below changes it, so the box doesn't jump around between
+   files. The media inside is centered within this stable frame. */
+.media-preview-content {
+  width: 90vw;
+  height: 90vh;
+  height: 90dvh;
+  max-width: 90vw;
+  max-height: 90vh;
+  max-height: 90dvh;
+  /* Positioning context for the absolutely-placed info panel. */
+  position: relative;
+}
+
+/* The letterbox filler around a windowed (non-fullscreen) preview is the
+   frame's own background color - extend that out to the whole screen
+   instead of dimming everything outside the frame a different, darker
+   shade, and drop the frame's border/shadow so it doesn't read as a
+   separate box floating on top of that background. */
+#mediaPreviewModal {
+  background-color: var(--surface);
+  /* Cover art tints this per track (applyAmbientBackgroundFrom in
+     player.js) - fade between tracks instead of snapping. */
+  transition: background-color 0.35s ease;
+}
+
+#mediaPreviewModal .media-preview-content {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.media-preview-body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  /* Sideways touches are the preview's own swipe to the next/previous item
+     (media.js); left to the browser it would claim them as a pan and cancel
+     the pointer. A zoomable picture's frame takes every touch (below). */
+  touch-action: pan-y pinch-zoom;
+}
+
+.media-preview-media {
+  max-width: 100%;
+  max-height: 75vh;
+  border-radius: 6px;
+}
+
+.media-preview-media.zoomable {
+  user-select: none;
+  touch-action: none;
+}
+
+.media-preview-media.zoomable.zoomed {
+  cursor: grab;
+}
+
+.media-preview-media.zoomable.zoomed.dragging {
+  cursor: grabbing;
+}
+
+/* The frame of a zoomable picture takes every touch as well: a pinch that
+   starts on the bars beside the picture zooms the picture, not the page
+   (enableImageZoomPan in player.js). */
+.media-preview-body.zoom-frame {
+  touch-action: none;
+}
+
+/* Applied to #mediaPreviewModal when the previewed image/video's native
+   resolution meets or exceeds the monitor's actual pixel count in both
+   dimensions - see applyMediaSizing() in media.js. */
+#mediaPreviewModal.fullscreen-media {
+  padding: 0;
+}
+
+#mediaPreviewModal.fullscreen-media .media-preview-content {
+  max-width: 100vw;
+  max-height: 100vh;
+  max-height: 100dvh;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  border-radius: 0;
+  border: none;
+  padding: 0;
+}
+
+#mediaPreviewModal.fullscreen-media .media-preview-media {
+  border-radius: 0;
+}
+
+/* The header would otherwise eat into the frame instead of letting the
+   media reach the top edge - float it over the media instead. */
+#mediaPreviewModal.fullscreen-media .modal-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+  z-index: 2;
+}
+
+#mediaPreviewModal.fullscreen-media .media-preview-body {
+  height: 100%;
+}
+
+/* Custom video/audio control bar - replaces the native <video>/<audio> bar
+   (both render as the same plain white pill in modern Chrome, and neither
+   can be restyled). See wrapWithCustomControls() in media.js. */
+.media-player-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+}
+
+/* An audio track with cover art shows the artwork as its visual surface,
+   with the <audio> element itself hidden - see wrapWithCustomControls(). */
+.media-player-wrap.has-cover audio {
+  display: none;
+}
+
+/* The wrapper (not the media element itself) is what gets fullscreened -
+   see player.js. The UA fills it to the viewport automatically; this just
+   centers the video/cover within that and scales it to fit. */
+.media-player-wrap:fullscreen,
+.media-player-wrap:-webkit-full-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Set from the cover art by setPreviewBackground() in player.js, so a
+     track keeps its tint in fullscreen instead of dropping to black bars.
+     Anything without cover art never sets it and falls back to black. */
+  background: var(--preview-ambient, #000);
+  transition: background-color 0.35s ease;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: 100vw;
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+
+/* Painted behind the fullscreen element. The wrapper covers the viewport
+   so this rarely shows, but a black seam during the fullscreen transition
+   is exactly the flash this change is meant to remove. */
+.media-player-wrap:fullscreen::backdrop,
+.media-player-wrap:-webkit-full-screen::backdrop {
+  background: var(--preview-ambient, #000);
+}
+
+/* Explicit fullscreen is the whole page while the preview is open (player.js,
+   fullscreenStage), so it lasts while the next item replaces the player, and
+   the header, the info panel and the right-click menu are on screen in it.
+   The preview already covers the window; the player fills its frame as the
+   fullscreened player filled the screen. An audio-only bar (no cover) keeps
+   its own size, and pictures are sized by player.js as in the window. */
+:root:fullscreen #mediaPreviewBody > .media-player-wrap:not(.audio-only) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
+:root:fullscreen #mediaPreviewBody > .media-player-wrap:not(.audio-only) video,
+:root:fullscreen #mediaPreviewBody > .media-player-wrap:not(.audio-only) img {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+  border-radius: 0;
+}
+
+/* The preview's header - title, favorite, info, close - is there only while
+   the mouse moved shortly ago (player.js, showPreviewChrome), in the window
+   and in fullscreen, or while keyboard focus is inside it. */
+#mediaPreviewModal .modal-header {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#mediaPreviewModal.chrome-visible .modal-header,
+#mediaPreviewModal .modal-header:has(:focus-visible) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* width/height (not just max-*) - max-width/max-height only ever shrink,
+   so with `auto` the media would render at its intrinsic size and stay
+   smaller than the screen instead of scaling up to fill it. object-fit
+   keeps the aspect ratio and letterboxes against the black wrapper. */
+.media-player-wrap:fullscreen video,
+.media-player-wrap:fullscreen img,
+.media-player-wrap:-webkit-full-screen video,
+.media-player-wrap:-webkit-full-screen img {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+  border-radius: 0;
+}
+
+.media-player-wrap video,
+.media-player-wrap.has-cover img {
+  cursor: pointer;
+}
+
+.media-player-wrap.cursor-hidden,
+.media-player-wrap.cursor-hidden video,
+.media-player-wrap.cursor-hidden.has-cover img {
+  cursor: none;
+}
+
+.custom-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+/* Up while player.js says so, or while a control has KEYBOARD focus. Not
+   :focus-within: a control clicked with the mouse keeps the focus, and that
+   held the bar on screen for good - after every play/pause, seek, volume or
+   gear click, until something else was clicked. */
+.custom-controls.controls-visible,
+.custom-controls:has(:focus-visible),
+.custom-controls:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* No image to hover over for a cover-less audio track - keep it visible
+   and lay it out as a normal bar under the (invisible) <audio> element. */
+.media-player-wrap.audio-only {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: min(420px, 100%);
+}
+
+.media-player-wrap.audio-only audio {
+  display: none;
+}
+
+.media-player-wrap.audio-only .custom-controls {
+  position: static;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.custom-controls-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.2rem;
+  flex-shrink: 0;
+}
+
+.media-player-wrap.audio-only .custom-controls-btn {
+  color: var(--ink);
+}
+
+.custom-controls-seek {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.custom-controls-time {
+  font-size: 0.75rem;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.4rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.media-player-wrap.audio-only .custom-controls-time {
+  color: var(--muted);
+}
+
+.custom-controls-volume {
+  width: 4.5rem;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* No box around the sliders, in fullscreen or not (user, 2026-09-24): a click
+   leaves the focus on the bar and the next key makes the browser ring it as
+   keyboard focus. The thumb stays visible, which is sign enough. */
+.custom-controls-seek:focus, .custom-controls-seek:focus-visible,
+.custom-controls-volume:focus, .custom-controls-volume:focus-visible {
+  outline: none;
+}
+.custom-controls-seek, .custom-controls-volume {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Stats for nerds (js/interp.js): a live panel in the player's top left, toggled
+   from the video's right-click menu. Monospace and translucent like YouTube's,
+   selectable so numbers can be copied. */
+.video-stats {
+  position: absolute;
+  top: 0.8rem;
+  left: 0.8rem;
+  z-index: 6;
+  max-width: min(26rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.7rem 0.6rem;
+  background: rgba(10, 12, 16, 0.78);
+  border-radius: 6px;
+  color: #e5e7eb;
+  font: 0.72rem/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+  cursor: auto;               /* the wrap hides the cursor while playing */
+  user-select: text;
+}
+
+.video-stats-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.video-stats-close {
+  background: none;
+  border: none;
+  color: #e5e7eb;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.1rem;
+}
+
+.video-stats dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.05rem 0.8rem;
+  margin: 0;
+}
+
+.video-stats dt {
+  color: #9ca3af;
+}
+
+.video-stats dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.video-stats-graph {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+  color: #9ca3af;
+}
+
+.video-stats-graph span {
+  min-width: 4.5rem;
+}
+
+.video-stats-graph canvas {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+}
+
+/* Video settings (js/interp.js): Smooth motion and the bandwidth cap. Opens
+   above the right end of the control bar and stays until dismissed, even when
+   the bar itself fades out. */
+.player-settings-menu {
+  position: absolute;
+  right: 0.9rem;
+  bottom: 3.2rem;
+  z-index: 5;
+  /* Sized by the viewport, not the wrap: the wrap is only as wide as the video,
+     which is nothing while it is still loading. */
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 0.8rem 0.9rem 0.6rem;
+  background: rgba(15, 18, 24, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1.3;             /* .media-player-wrap sets 0, which collapses the buttons */
+  cursor: default;              /* the wrap hides the cursor while playing */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.player-settings-label {
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+}
+
+.player-settings-label:not(:first-child) {
+  margin-top: 0.8rem;
+}
+
+.player-settings-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.player-settings-choice button {
+  flex: 1 0 auto;
+  min-width: 2.6rem;
+  padding: 0.3rem 0.5rem;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.player-settings-choice button:hover {
+  background: rgba(148, 163, 184, 0.24);
+}
+
+.player-settings-choice button.selected {
+  background: var(--accent, #3987e5);
+  border-color: var(--accent, #3987e5);
+  color: #fff;
+}
+
+.player-settings-note {
+  margin-top: 0.35rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.media-preview-fallback {
+  text-align: center;
+  color: var(--muted);
+  padding: 2rem;
+}
+
+.media-preview-fallback a {
+  color: var(--accent);
+}
+
+/* Guest Accounts */
+.guest-accounts-card {
+  margin-top: 1.5rem;
+}
+
+.guest-accounts-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.guest-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.guest-form input {
+  flex: 1 1 200px;
+  width: auto;
+}
+
+.guest-form .btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0.85rem 1.25rem;
+}
+
+.guest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.guest-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.guest-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.85rem;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.guest-name {
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.guest-delete-btn {
+  background: transparent;
+  border: 1px solid var(--down);
+  color: var(--down);
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.guest-delete-btn:hover {
+  background-color: var(--down);
+  color: #fff;
+}
+
+/* Source badges stay branded -- a YouTube badge should look like YouTube --
+   but the pill geometry comes from the shared scale. */
+.badge {
+  border-radius: var(--r-xs);
+  font-size: var(--text-xs);
+}
+
+/* ── Signed-in user, top right ─────────────────────────────────────────────
+   Replaces the old Logout link. Identity is Authelia's now, so the bar states
+   who you are; signing out sits inside the menu rather than being a button you
+   can hit by accident. Built from the shared tokens only. */
+
+.user-profile { position: relative; margin-left: auto; }
+
+.user-profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  appearance: none;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  padding: 0.25rem 0.6rem 0.25rem 0.25rem;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.user-profile-btn:hover { background: var(--wash); border-color: var(--ring); }
+.user-profile-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.user-avatar {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.user-name { font-weight: 500; }
+
+.user-role {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--ring);
+  color: var(--muted);
+}
+/* Admin is stated, not shouted: it decides what the page lets you do. */
+.user-role.is-admin { color: var(--accent); border-color: var(--accent-wash); }
+.user-role.is-guest { color: var(--muted); }
+
+.user-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  min-width: 13rem;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-pop);
+  padding: 0.3rem;
+  z-index: 50;
+}
+.user-menu[hidden] { display: none; }
+
+.user-menu-head {
+  padding: 0.4rem 0.6rem 0.5rem;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.3rem;
+}
+
+.user-menu-item {
+  display: block;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--r-xs);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: var(--text-sm);
+}
+.user-menu-item:hover { background: var(--surface-hover); }
+.user-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.user-menu-signout { color: var(--down); }
+
+/* -------------------------------------------------------------------
+   Select mode: multi-select by dragging, and the delete dialog.
+   ------------------------------------------------------------------- */
+
+.select-mode-btn {
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.select-mode-btn:hover { background: var(--surface-hover); color: var(--ink); }
+
+.select-mode-btn.active {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* While selecting, tiles are targets rather than links: kill the pointer
+   affordance and stop drags from grabbing images and thumbnails. */
+body.select-mode #mediaGrid { cursor: crosshair; user-select: none; }
+body.select-mode #mediaGrid .media-tile { cursor: pointer; }
+body.select-mode #mediaGrid img { pointer-events: none; }
+
+#mediaGrid .media-tile.tile-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-wash);
+}
+
+.select-band {
+  position: fixed;
+  z-index: 60;
+  border: 1px solid var(--accent);
+  background: var(--accent-wash);
+  pointer-events: none;
+}
+
+/* Floating, not in flow: a folder can be thousands of tiles tall, and a bar
+   appended after the grid would sit far below the fold - you would turn
+   select mode on and see nothing happen. */
+.select-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 720px);
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+.select-count { color: var(--muted); white-space: nowrap; }
+
+/* .btn is full-width by default (it is a form button elsewhere); in a bar of
+   three it has to size to its label instead. */
+.select-bar .btn { width: auto; padding: 7px 14px; font-size: 0.9rem; }
+
+.select-delete:not(:disabled) {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+
+.select-delete:disabled { opacity: 0.5; cursor: default; }
+
+.select-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 70;
+  max-width: min(90vw, 640px);
+  padding: 12px 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--ink);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* --- the delete dialog --- */
+
+.delete-content { max-width: 560px; }
+
+.delete-summary-line { margin: 0 0 10px; color: var(--ink); }
+
+.delete-list {
+  max-height: 210px;
+  overflow-y: auto;
+  margin: 10px 0;
+  padding: 8px;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.delete-list-row {
+  padding: 2px 0;
+  color: var(--ink-2);
+  font-size: 0.9em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.delete-list-more { padding-top: 4px; color: var(--muted); font-size: 0.9em; }
+
+.delete-hint { color: var(--muted); font-size: 0.9em; margin: 10px 0 14px; }
+
+.delete-actions { display: flex; flex-direction: column; gap: 10px; }
+
+/* Each choice states its consequence rather than relying on the button
+   label alone - "delete forever" and "delete only now" differ in what
+   happens weeks later, which a one-word label cannot carry. */
+.delete-actions .btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  line-height: 1.35;
+}
+
+.delete-actions .btn span {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.85em;
+  font-weight: normal;
+  opacity: 0.85;
+}
+
+.delete-actions .delete-ban {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+
+.delete-status { margin-top: 10px; min-height: 1.2em; color: var(--muted); }
+.delete-status.err { color: var(--down); }
+
+/* Shown only while a selection holds the refresh, so a deliberately still
+   page is never mistaken for a broken one. */
+.ui-paused {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--ring, #333);
+  background: var(--surface-2, #1b1b1a);
+  color: var(--muted, #9a9a97);
+  font-size: 11.5px;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Media filters ─────────────────────────────────────────────────────────
+   A popover, not an inline row: four categories of options do not fit beside
+   the sort controls on a phone. */
+.media-filter { position: relative; display: inline-flex; }
+
+.media-filter-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--ink-2); font-size: 12.5px; cursor: pointer;
+}
+.media-filter-btn:hover { background: var(--surface-hover); }
+.media-filter-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--ink); }
+
+.media-filter-count {
+  min-width: 16px; padding: 0 5px; border-radius: 999px;
+  background: var(--accent); color: #fff; font-size: 11px; text-align: center;
+}
+
+.media-filter-panel {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+  width: min(340px, 90vw); max-height: 70vh; overflow-y: auto;
+  padding: 12px 14px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line);
+  box-shadow: var(--shadow-pop);
+}
+
+.mf-cat + .mf-cat { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mf-cat-head { font-size: 12px; font-weight: 600; color: var(--ink); }
+.mf-note { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
+.mf-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+.mf-opt {
+  padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--ink-2); font-size: 12px; white-space: nowrap;
+}
+.mf-opt:hover { background: var(--surface-hover); }
+.mf-opt[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+
+.mf-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line);
+}
+.media-filter-clear {
+  padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2);
+  font-size: 12px;
+}
+.media-filter-clear:hover { background: var(--surface-hover); }
+
+/* Search mode selector: the box and the mode are ONE control, not two sitting
+   next to each other, because picking a mode without a query does nothing -
+   the mode is half of the question, not a setting beside it. So the bar itself
+   carries the border and the focus ring, the input inside it is stripped bare,
+   and the mode sits in its own darker box against the right-hand edge. */
+.media-search-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 10px 0 14px; min-height: 48px;
+  /* A pill, not a rounded box: this is one question, and the shape says so.
+     No overflow:hidden - both popovers hang out of the bottom of it. */
+  border: 1px solid transparent; border-radius: 999px;
+  background: var(--surface-2);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+/* Focus belongs to the whole control. The border is transparent rather than
+   absent so nothing shifts by a pixel when it appears. */
+.media-search-bar:focus-within { border-color: var(--accent); }
+
+.media-search-icon {
+  flex: 0 0 auto; width: 19px; height: 19px;
+  fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round;
+}
+.media-search-bar:focus-within .media-search-icon { stroke: var(--ink-2); }
+
+.media-search-bar #mediaSearchInput {
+  /* min-width:0 or the input refuses to shrink below its placeholder and
+     shoves the chip off a phone screen. */
+  flex: 1 1 auto; min-width: 0;
+  border: 0; border-radius: 0; background: transparent;
+  padding: 0.7rem 0; font-size: 0.95rem;
+}
+.media-search-bar #mediaSearchInput:focus { border: 0; }
+
+/* The mode chip. Reads as the current state; opens the choice on click. */
+.search-chip-wrap { position: relative; flex: 0 0 auto; }
+.search-chip {
+  padding: 4px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink-2); font-size: 12.5px; white-space: nowrap;
+}
+.search-chip:hover { background: var(--surface-hover); color: var(--ink); }
+.search-chip[aria-expanded="true"] { border-color: var(--accent); color: var(--ink); }
+/* A mode other than the default is a filter in force, so it wears the accent -
+   the same language the filter chips in the panel already speak. */
+.search-chip.is-set { border-color: var(--accent); color: var(--ink); }
+
+/* `display: flex` here outranks the user agent's `[hidden] { display: none }`,
+   so the hidden attribute alone left the menu on screen from page load. Any
+   rule that sets display on an element toggled by `hidden` has to say this. */
+.search-chip-menu[hidden] { display: none; }
+
+.search-chip-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  display: flex; flex-direction: column; min-width: 168px; padding: 5px;
+  border-radius: 10px; background: var(--surface); border: 1px solid var(--line);
+  box-shadow: var(--shadow-pop);
+}
+.search-chip-opt {
+  padding: 7px 10px; border: 0; border-radius: 7px; cursor: pointer;
+  background: transparent; color: var(--ink-2);
+  font-size: 13px; text-align: left; white-space: nowrap;
+}
+.search-chip-opt:hover { background: var(--surface-hover); color: var(--ink); }
+.search-chip-opt[aria-current="true"] { color: var(--ink); font-weight: 600; }
+
+/* The subject being searched within, beside the words that narrow it. Accent
+   like a filter in force. It does not shrink: the box beside it is width:100%,
+   so a shrinking chip was squeezed to "Fav..." with room to spare. A long name
+   truncates at 45% of the bar instead, which keeps it on a phone. It sets
+   display, so [hidden] is restated (see .search-chip-menu). */
+.search-subject {
+  flex: 0 0 auto; min-width: 0; max-width: 45%;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px 4px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--surface);
+  color: var(--ink); font-size: 12.5px;
+}
+.search-subject[hidden] { display: none; }
+.search-subject-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-subject-x { flex: 0 0 auto; color: var(--muted); font-size: 15px; line-height: 1; }
+.search-subject:hover .search-subject-x { color: var(--ink); }
+
+/* In the bar the filter is an icon: the label would be the third piece of text
+   in a row that is meant to be read as one line. */
+.media-filter-btn svg {
+  width: 20px; height: 20px; display: block;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+}
+.media-search-bar .media-filter-btn {
+  position: relative; padding: 6px; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted);
+}
+.media-search-bar .media-filter-btn:hover { background: var(--surface-hover); color: var(--ink); }
+.media-search-bar .media-filter-btn[aria-expanded="true"] { color: var(--ink); }
+/* The count rides on the icon rather than beside it - there is no room beside
+   it, and a badge on a control is the ordinary way to say "this one is on". */
+.media-search-bar .media-filter-count {
+  position: absolute; top: -2px; right: -2px;
+  min-width: 15px; padding: 0 4px; font-size: 10px; line-height: 15px;
+}
+
+/* The top bar is absolutely positioned so it can sit in the corner BESIDE a
+   centred heading. On a narrow screen there is nothing to sit beside: the
+   Dashboard link and the user chip met the centred <h1> in the middle and drew
+   straight through it. Below this width it takes a row of its own - body is
+   already a flex column with a gap, so becoming static is the whole fix. */
+@media (max-width: 760px) {
+  .top-bar {
+    position: static;
+    width: 100%;
+    max-width: 1100px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .header { margin-bottom: 1.25rem; }
+}
+
+@media (max-width: 520px) {
+  /* The chip label is what matters on a narrow screen, not the room around
+     it; the input needs every pixel it can keep. */
+  .media-search-bar { gap: 6px; padding-left: 11px; }
+  .search-chip { padding: 4px 9px; font-size: 12px; }
+}
+/* Says how much of the library the chosen mode can actually answer over. A
+   half-built index and a genuinely empty result look identical without it. */
+.media-search-note {
+  margin: 6px 2px 0; font-size: 12px; color: var(--muted); line-height: 1.5;
+}
+
+/* Character pools. A pool is a tag, so the tile leads with the face rather
+   than the name - it is recognised before it is read. */
+.character-grid {
+  display: grid; gap: 12px; padding: 4px 2px;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+}
+.character-tile { cursor: pointer; text-align: center; }
+.character-cover {
+  width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; font-size: 28px;
+  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.character-cover img { width: 100%; height: 100%; object-fit: cover; }
+.character-tile:hover .character-cover {
+  border-color: var(--accent); transform: translateY(-2px);
+}
+.character-name {
+  margin-top: 6px; font-size: 12.5px; color: var(--ink); line-height: 1.3;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.character-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+/* The variant strip: one character, several danbooru tags.
+   A horizontal rail rather than a grid - it sits above the results and must
+   not push them off the screen on a phone, so it scrolls sideways and keeps
+   its height fixed however many costumes a character has. */
+.variant-strip {
+  display: flex; gap: 12px; padding: 2px 2px 10px;
+  overflow-x: auto; overflow-y: hidden;
+  border-bottom: 1px solid var(--line); margin-bottom: 10px;
+  scrollbar-width: thin;
+}
+/* A class that sets `display` beats the `hidden` attribute, so the attribute
+   has to be spelled out or the strip stays on screen for every search. */
+.variant-strip[hidden] { display: none; }
+.variant-chip {
+  flex: 0 0 auto; width: 72px; cursor: pointer; text-align: center;
+  background: none; border: 0; padding: 0; color: inherit; font: inherit;
+}
+.variant-chip-cover {
+  width: 56px; height: 56px; margin: 0 auto; border-radius: 50%;
+  overflow: hidden; background: var(--surface-2);
+  border: 2px solid transparent; box-shadow: 0 0 0 1px var(--line) inset;
+  display: flex; align-items: center; justify-content: center; font-size: 20px;
+  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.variant-chip-cover img { width: 100%; height: 100%; object-fit: cover; }
+.variant-chip:hover .variant-chip-cover { transform: translateY(-2px); }
+.variant-chip[aria-pressed="true"] .variant-chip-cover { border-color: var(--accent); }
+.variant-chip-name {
+  margin-top: 5px; font-size: 11px; line-height: 1.25; color: var(--muted);
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.variant-chip[aria-pressed="true"] .variant-chip-name {
+  color: var(--ink); font-weight: 600;
+}
+.variant-chip-count { font-size: 10.5px; color: var(--muted); }
+
+/* A character whose pool holds several tags says so on its tile, so the grid
+   explains why one tile now covers what used to be six. */
+.character-variants {
+  font-size: 10.5px; color: var(--muted); margin-top: 1px;
+}
+
+/* People. Wider tiles than characters: a person carries a name, a count and
+   two buttons, and a 116px circle cannot hold that without the name wrapping
+   to three lines. */
+.people-grid {
+  display: grid; gap: 14px; padding: 4px 2px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.person-tile { cursor: pointer; text-align: center; }
+.person-cover {
+  width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; font-size: 30px;
+  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.person-cover img { width: 100%; height: 100%; object-fit: cover; }
+.person-tile:hover .person-cover {
+  border-color: var(--accent); transform: translateY(-2px);
+}
+.person-name {
+  margin-top: 6px; font-size: 12.5px; color: var(--ink); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.person-name.is-unnamed { color: var(--muted); font-style: italic; }
+/* A worked-out name, dotted to say "this is the library's guess, not a fact". */
+.person-name.is-auto {
+  color: var(--ink-2); border-bottom: 1px dotted var(--line);
+  display: inline-block; max-width: 100%; cursor: help;
+}
+.person-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+/* The tools stay out of the way until the tile is under the pointer: a grid
+   of 500 people is a grid of faces, not a grid of buttons. Touch has no
+   hover, so there they are simply always on. */
+.person-tools {
+  display: flex; gap: 4px; justify-content: center; margin-top: 4px;
+  opacity: 0; transition: opacity var(--dur) var(--ease);
+}
+.person-tile:hover .person-tools, .person-tile:focus-within .person-tools { opacity: 1; }
+@media (hover: none) { .person-tools { opacity: 1; } }
+.person-tools .btn { padding: 2px 7px; font-size: 11px; }
+
+/* Waiting for the second half of a merge: the picked tile is marked and every
+   other tile reads as a target. */
+.people-grid.is-merging .person-tile { cursor: copy; }
+.people-grid.is-merging .person-tile:hover .person-cover { border-color: var(--ok); }
+.person-tile.is-merge-source .person-cover {
+  border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent);
+}
+.review-prof-exempt {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  font-size: 11.5px; color: var(--muted);
+}
+.review-prof-exempt label {
+  display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap; cursor: pointer;
+}
+.review-prof-exempt input { margin: 0; }
+
+/* ---------------------------------------------------------------------------
+   Deck mode: the review and training queues on a phone
+   ---------------------------------------------------------------------------
+   One card per screen, moved by the browser's OWN vertical scrolling. That
+   choice does most of the work: scroll-snap gives the inertia and the
+   rubber-band that make a feed feel like a feed, and "swipe back to the last
+   one and change your answer" is simply scrolling up - the cards are real DOM
+   in a real scroller, so nothing has to be re-rendered or remembered for it.
+
+   A hand-rolled transform deck would have needed requestAnimationFrame, which
+   does not fire in a hidden tab (so the test harness would silently pass on
+   nothing), plus its own momentum and its own history of where you have been.
+
+   Everything here is keyed on the .is-deck CLASS rather than on the media
+   query directly: the JS has to know whether it is in deck mode too - a tap
+   on a review card must not toggle selection here - and one source of truth
+   for that beats a media query and a matchMedia that can disagree.
+   --------------------------------------------------------------------------- */
+
+/* The card leaves the page flow entirely and becomes the screen. */
+/* Above .top-bar (z 100), which is position:absolute and would otherwise print
+   the Dashboard link across the picture - measured with elementFromPoint, which
+   returned A.nav-link at the top-left of a full-screen deck. Still below .modal
+   (1000), because the full preview has to open ON TOP of the deck, and below
+   .context-menu (2000). */
+.media-browser-card.is-deck {
+  position: fixed; inset: 0; z-index: 120;
+  margin: 0; padding: 0; border: 0; border-radius: 0;
+  background: var(--surface, #14161a);
+  display: flex; flex-direction: column;
+}
+/* The header and the explainer are what stop the picture being full screen,
+   and on a phone the picture IS the question. Both are reachable again by
+   leaving deck mode; the close button below replaces the header's only
+   gesture that matters here. */
+.media-browser-card.is-deck > .media-browser-header,
+.media-browser-card.is-deck > .media-search-note,
+.media-browser-card.is-deck > .review-profiles { display: none; }
+
+/* The rule picker is the one piece of the header that stays in the deck:
+   choosing what to review happens on the phone too. Its own row above the
+   cards, padded clear of the fixed position counter (top left) and the close
+   button (top right), which both float over this row rather than the picture. */
+.review-filter { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.review-filter-label { font-size: 12px; color: var(--muted); }
+.review-filter-select { min-width: 0; max-width: 100%; }
+.media-browser-card.is-deck > .review-filter {
+  flex: 0 0 auto; margin: 0;
+  padding: 8px 60px 6px 132px;
+  background: var(--surface, #14161a);
+}
+.media-browser-card.is-deck > .review-filter .review-filter-label { display: none; }
+.media-browser-card.is-deck > .review-filter .review-filter-select {
+  width: 100%; min-height: 34px; font-size: 14px;
+}
+
+/* DISCRETE, not continuous. Scroll-snap was the first attempt and it is the
+   wrong model: it is free scrolling that happens to land on a card, so the
+   deck drifts under the finger, momentum carries it, and how far you get
+   depends on how hard you flicked. One swipe should mean exactly one card.
+
+   So the container does not scroll by hand at all - overflow is hidden and the
+   only thing that moves it is deckStep(), which sets scrollTop to a whole
+   multiple of the card height. The gesture decides DIRECTION; it never decides
+   distance.
+
+   touch-action: pan-x rather than none - vertical belongs to the swipe
+   handler, but horizontal is left to the browser so the platform's own
+   edge-swipe back gesture still works. */
+.review-grid.is-deck {
+  display: block; gap: 0; padding: 0; margin: 0;
+  flex: 1 1 auto; min-height: 0;
+  overflow: hidden;
+  touch-action: pan-x;
+  overscroll-behavior: contain;
+}
+.review-grid.is-deck > .review-tile {
+  height: 100%; width: 100%;
+  border: 0; border-radius: 0;
+  background: var(--surface, #14161a);
+}
+/* The card change is a CUT, not a scroll. scroll-behavior:smooth was the first
+   attempt and it is wrong twice over: it animates the change, which is the
+   continuous movement this deck exists to avoid, and the animation is driven
+   by requestAnimationFrame - which does not run in a backgrounded tab, so the
+   deck simply stopped moving there and scrollTop stayed where it was for ever.
+   Assigning scrollTop with no scroll-behavior is instant, deterministic, and
+   works whether or not anything is animating. */
+.review-grid.is-deck > .review-tile {
+  animation: deck-card-in 140ms var(--ease, ease-out);
+}
+@keyframes deck-card-in { from { opacity: .55; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .review-grid.is-deck > .review-tile { animation: none; }
+}
+/* The picture takes whatever is left after the fixed furniture, and is
+   CONTAINed rather than cropped: in the grid a square crop is a thumbnail, but
+   here it is the thing being judged, and judging a picture you can only see
+   the middle of is exactly the failure mode. */
+.review-grid.is-deck > .review-tile .review-shot {
+  flex: 1 1 auto; min-height: 0; aspect-ratio: auto; cursor: default;
+}
+.review-grid.is-deck > .review-tile .review-shot img { object-fit: contain; }
+.review-grid.is-deck > .review-tile .review-body {
+  flex: 0 0 auto; padding: 8px 12px 4px;
+}
+.review-grid.is-deck > .review-tile .review-acts {
+  flex: 0 0 auto; padding: 6px 10px 10px; gap: 8px;
+}
+/* Bigger targets than the desktop grid: this is a thumb, once per card, and a
+   mis-tap here costs a label. */
+.review-grid.is-deck > .review-tile .review-acts .btn {
+  padding: 12px 8px; font-size: 14px; min-height: 46px;
+}
+/* The account reference, compact. Capping the container's height alone left
+   the 85px grid cells hanging out over the answer buttons, because the strip
+   is a grid and overflow is visible - the cells have to be resized, not the
+   box clipped. A single row of small squares that scrolls sideways keeps the
+   reference legible without taking the picture's space. */
+.review-grid.is-deck .sibling-strip {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: 52px;
+  height: 52px; max-height: 52px;
+  overflow-x: auto; overflow-y: hidden;
+  gap: 6px;
+}
+.review-grid.is-deck .sibling-strip img {
+  width: 52px; height: 52px; object-fit: cover;
+}
+
+/* The last card. A real snap point like any other, so it is reached by the
+   same scroll rather than appearing as a banner nobody scrolls to. */
+.review-grid.is-deck > .deck-end {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px; padding: 24px; text-align: center;
+}
+.deck-end-text { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.review-grid.is-deck > .deck-end .review-acts {
+  display: flex; gap: 10px; width: 100%; max-width: 320px;
+}
+.review-grid.is-deck > .deck-end .review-acts .btn { flex: 1 1 0; }
+
+/* The zoom control, out of the corner it shares with the deck's close button.
+
+   In the grid it sits top-right of a 200px tile and nothing else is there. In
+   the deck the tile IS the screen, so top-right is where the fixed X lives and
+   the two sat on top of each other - the X won, because it is fixed and paints
+   later, so the zoom was simply unreachable. Bottom-right of the picture is
+   clear of the X (top right), the position counter (top left) and the verdict
+   row (below the picture), and is the easier reach for a thumb anyway. */
+.review-grid.is-deck .review-zoom {
+  top: auto; bottom: 10px; right: 10px;
+  width: 44px; height: 44px; line-height: 42px;
+  border-radius: 50%; font-size: 19px;
+  background: rgba(0, 0, 0, .55); color: #fff; border-color: transparent;
+}
+.review-grid.is-deck .review-zoom:active { background: rgba(0, 0, 0, .75); }
+
+/* Which card you are on, so a long queue does not feel bottomless. */
+.deck-progress {
+  position: fixed; top: 10px; left: 12px; z-index: 122;
+  padding: 4px 10px; border-radius: 999px;
+  background: rgba(0, 0, 0, .55); color: #fff;
+  font-size: 12px; line-height: 1.4; pointer-events: none;
+}
+/* Top RIGHT, away from the left-edge zone where the browser's own back
+   gesture lives. 44px is the smallest target a thumb hits reliably. */
+.deck-close {
+  position: fixed; top: 6px; right: 8px; z-index: 122;
+  width: 44px; height: 44px; padding: 0;
+  border: 0; border-radius: 50%;
+  background: rgba(0, 0, 0, .55); color: #fff;
+  font-size: 22px; line-height: 44px; text-align: center; cursor: pointer;
+}
+.deck-close:active { background: rgba(0, 0, 0, .75); }
+
+/* The answer already given, sitting with the buttons it describes rather than
+   floating over the picture - see deckStamp() for why that mattered. Full
+   width and directly above the controls, so there is no question which card it
+   belongs to. */
+.deck-verdict {
+  flex: 0 0 auto; margin: 0 10px 4px;
+  padding: 5px 10px; border-radius: 8px;
+  font-size: 13px; font-weight: 700; letter-spacing: .02em;
+  text-align: center; color: #fff; background: rgba(0, 0, 0, .45);
+  box-shadow: 0 0 0 2px currentColor inset;
+}
+.deck-verdict.is-belongs { color: var(--ok, #4ade80); }
+.deck-verdict.is-not_belongs { color: var(--accent, #4c8dff); }
+.deck-verdict.is-unsure { color: var(--muted, #9aa4b2); }
+.deck-verdict.is-discard { color: var(--danger, #f87171); }
+.deck-verdict.is-keep { color: var(--ok, #4ade80); }
+.deck-verdict.is-keep_anyway { color: var(--accent, #4c8dff); }
+/* Moved past without being seen. Amber rather than red, because nothing
+   will happen to it: it stays pending and gets offered again. */
+.deck-verdict.is-skipped { color: var(--warn, #fbbf24); }
+.review-grid.is-deck > .review-tile.verdict-skipped .review-shot {
+  box-shadow: inset 0 0 0 3px var(--warn, #fbbf24);
+}
+/* Placeholder for a thumbnail that never arrived - inserted alongside the
+   zoom button rather than replacing the whole shot. */
+.review-shot-failed {
+  position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center; font-size: 34px;
+}
+
+/* And a coloured edge on the picture, which is what carries at a glance while
+   swiping. Inset so it cannot be mistaken for the next card's. */
+.review-grid.is-deck > .review-tile.verdict-discard .review-shot {
+  box-shadow: inset 0 0 0 3px var(--danger, #f87171);
+}
+.review-grid.is-deck > .review-tile.verdict-keep .review-shot {
+  box-shadow: inset 0 0 0 3px var(--ok, #4ade80);
+}
+.review-grid.is-deck > .review-tile.verdict-keep_anyway .review-shot {
+  box-shadow: inset 0 0 0 3px var(--accent, #4c8dff);
+}
+
+/* The bar keeps its place at the bottom of the screen rather than the bottom
+   of the document, so the count and Submit are reachable from any card. */
+.media-browser-card.is-deck > .training-bar {
+  flex: 0 0 auto; margin: 0;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line); background: var(--surface-2);
+}
+
+/* Deck mode is for a phone-sized viewport. Kept as a media query as well as a
+   class so a desktop window that is merely narrow behaves the same way - the
+   layout, not the input device, is what makes a grid unusable here. */
+@media (min-width: 761px) {
+  /* Nothing: the class is only ever applied below this width. */
+}
+
+/* The review queue. Wider tiles than people: the point of each one is the
+   REASON, and a reason has to be readable or the queue cannot be worked. */
+.review-grid {
+  display: grid; gap: 14px; padding: 4px 2px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.review-tile {
+  display: flex; flex-direction: column;
+  /* Full height of the grid cell, so every tile in a row is the same height
+     and the buttons land on one line across the row. */
+  height: 100%;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  background: var(--surface-2);
+}
+.review-shot {
+  aspect-ratio: 1; flex: 0 0 auto; background: var(--surface); cursor: zoom-in;
+  display: flex; align-items: center; justify-content: center; font-size: 26px;
+}
+.review-shot { position: relative; }
+.review-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* The tile is the checkbox, so selection has to be unmissable across a grid of
+   forty - a tick and a dimmed picture, not just a border. */
+#reviewGrid .review-tile { cursor: pointer; }
+#reviewGrid .review-tile.is-picked { border-color: var(--accent); }
+#reviewGrid .review-tile.is-picked .review-shot img { opacity: 0.55; }
+#reviewGrid .review-tile.is-picked .review-shot::after {
+  content: "\2713"; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 46px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.6);
+}
+.review-zoom {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  width: 26px; height: 26px; padding: 0; line-height: 24px; text-align: center;
+  border-radius: 6px; cursor: zoom-in; font-size: 14px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+}
+.review-zoom:hover { background: var(--surface-hover); color: var(--ink); }
+/* The body takes the slack so the actions can be pinned underneath it: a
+   one-line reason and a two-line reason must not move the buttons. */
+.review-body {
+  flex: 1 1 auto; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+/* Two lines, always - reserved whether or not the text needs them, so tiles
+   are the same height even in different rows of the grid. */
+.review-reason {
+  font-size: 12.5px; color: var(--ink); font-weight: 600;
+  line-height: 1.35; min-height: 2.7em; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.review-detail, .review-where {
+  font-size: 11.5px; color: var(--muted); line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Three buttons now, and "Not a mismatch" does not fit beside two others in a
+   200px tile - so they wrap, with the two keeps sharing the first row and
+   Delete on its own underneath, out of reflex range. */
+.review-acts {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px;
+  margin-top: auto;                 /* pinned to the bottom of the tile */
+}
+.review-acts .btn { flex: 1 1 40%; padding: 5px 8px; font-size: 12px; }
+.review-acts .review-del { flex: 1 1 100%; }
+/* "Does not fit" is a long label; let the row wrap rather than clip it. */
+/* A fixed three-column row, not a wrapping flex one: with wrapping, a tile
+   whose label happened to need a second line put its buttons higher than its
+   neighbours, so the answers did not sit on one line across the grid. */
+/* The account's own output, as the yardstick. Small on purpose - it is the
+   reference, not the subject, and the file being judged has to stay the
+   biggest thing on the tile. */
+.sibling-strip {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin-top: 5px;
+  /* Four squares in a row - so the strip claims the same height whether it
+     holds four thumbnails, one, or the "nothing else yet" note. */
+  aspect-ratio: 4 / 1;
+}
+.sibling-none {
+  grid-column: 1 / -1; align-self: center;
+  font-size: 11px; color: var(--muted); line-height: 1.3;
+}
+.sibling-strip img {
+  width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
+  border-radius: 4px; background: var(--surface);
+}
+
+#trainingGrid .review-acts {
+  display: grid; grid-template-columns: 1fr 1fr auto; flex-wrap: nowrap;
+}
+#trainingGrid .review-acts .btn { flex: none; white-space: nowrap; padding: 5px 6px; }
+/* One line is enough for a handle here; the strip below carries the height. */
+#trainingGrid .review-reason { min-height: 0; -webkit-line-clamp: 1; }
+
+/* A staged answer, not yet sent. Visible at a glance across a grid of two
+   dozen, because spotting the one you hit by accident is the point. */
+#trainingGrid .review-acts .btn.is-chosen {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+/* The same treatment in the review deck, which had none - the class was being
+   set and nothing was drawing it, so pressing a rescue looked like it had done
+   nothing and pressing it again looked like it would not toggle. */
+.review-grid.is-deck .review-acts .btn.is-chosen {
+  /* Fallback colour on purpose: --accent comes from the shared atrihord.css, and a
+     pressed button that renders transparent when that stylesheet is slow or
+     missing is indistinguishable from one that did not register the press. */
+  background: var(--accent, #4c8dff); border-color: var(--accent, #4c8dff);
+  color: #fff; font-weight: 600;
+}
+/* The grid's selection tick has no business in the deck: there is no
+   selection there, and a tick across the picture reads as "kept" to about
+   half the people who see it. */
+.review-grid.is-deck .review-tile.is-picked .review-shot img { opacity: 1; }
+.review-grid.is-deck .review-tile.is-picked .review-shot::after { content: none; }
+#trainingGrid .review-tile.is-answered { border-color: var(--accent); }
+
+/* An answer the consistency checks picked out. Outlined rather than coloured
+   in: it is a question, not a verdict. */
+.review-tile.is-suspect { border-color: var(--warn, #d0a03b); }
+.is-suspect-note { color: var(--warn, #d0a03b) !important; }
+/* A disagreement is information, not a problem - accent, not warning. */
+.is-disagree-note { color: var(--accent) !important; }
+.review-tile.is-changed { border-color: var(--ok); }
+/* The two directions of disagreement. A rule that fired wrongly is the rarer
+   and more actionable one, so it gets the strong colour; a blind spot is one
+   example among many and stays quiet. */
+.review-tile.is-rule-wrong { border-color: var(--down); }
+.review-tile.is-rule-wrong .review-reason { color: var(--down); }
+.review-tile.is-rule-blind { border-color: var(--line); }
+.review-tile.is-rule-blind .review-reason { color: var(--muted); font-weight: 500; }
+#checkGrid .review-acts { display: grid; grid-template-columns: 1fr 1fr auto; }
+#checkGrid .review-acts .btn { flex: none; white-space: nowrap; padding: 5px 6px; }
+#checkGrid .review-acts .btn.is-chosen {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+#checkGrid .review-reason { min-height: 0; -webkit-line-clamp: 1; }
+
+.training-bar {
+  position: sticky; bottom: 0; z-index: 5;
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 14px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface);
+}
+.training-staged { flex: 1 1 auto; font-size: 12px; color: var(--muted); }
+.training-bar .btn { width: auto; padding: 6px 14px; font-size: 0.9rem; }
+.training-bar .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Delete wears the danger colour; Keep is the quiet one. The dangerous button
+   should never be the one you press by reflex. */
+.review-del { background: var(--down); border-color: var(--down); color: #fff; }
+.review-del:hover { background: var(--down); color: #fff; opacity: 0.9; }
+
+.review-profiles {
+  max-height: 320px; overflow-y: auto; margin-bottom: 14px;
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.review-prof-row {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px;
+  align-items: center; padding: 6px 10px; font-size: 12px;
+}
+.review-prof-row + .review-prof-row { border-top: 1px solid var(--line); }
+.review-prof-handle { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.review-prof-num { color: var(--muted); font-variant-numeric: tabular-nums; }
+.review-prof-row select { padding: 2px 6px; font-size: 12px; }
+
+.people-show { padding: 3px 8px; font-size: 12px; }
+
+.people-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--muted); cursor: pointer;
+}
+
+/* Type-ahead over the fixed tag vocabulary. */
+.media-suggest {
+  position: relative; margin: 4px 2px 0; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); overflow: hidden;
+  box-shadow: var(--shadow-card); max-width: 520px;
+}
+.media-suggest-row {
+  display: flex; justify-content: space-between; gap: 12px; width: 100%;
+  padding: 7px 12px; background: none; border: 0; cursor: pointer;
+  color: var(--ink); font-size: 13px; text-align: left;
+}
+.media-suggest-row:hover { background: var(--surface-hover); }
+.media-suggest-count { color: var(--muted); font-size: 12px; }
+
+/* Library indexing progress. Four bars rather than one: the passes run at
+   different speeds and in whatever order was chosen, so a single percentage
+   would be an average of unrelated things. */
+.ai-progress { display: flex; flex-direction: column; gap: 10px; }
+.ai-pass-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px; font-size: 12.5px; margin-bottom: 4px;
+}
+.ai-pass-name { color: var(--ink-2); }
+.ai-pass-num { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.ai-bar {
+  height: 6px; border-radius: 999px; background: var(--surface-2);
+  overflow: hidden;
+}
+.ai-bar-fill {
+  height: 100%; background: var(--accent); border-radius: 999px;
+  transition: width var(--dur-slow) var(--ease);
+}
+/* The pass currently running is the one worth looking at. */
+.ai-pass-active .ai-pass-name { color: var(--ink); font-weight: 600; }
+.ai-pass-active .ai-bar-fill { background: var(--ok); }
+/* Most passes sit under 1% for days, and a sub-pixel sliver reads as "nothing
+   has happened". Started is worth seeing; only a genuine zero stays empty. */
+.ai-bar-fill { min-width: 3px; }
+.ai-bar-empty { min-width: 0; }
+.ai-progress-note { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+
+/* ---- media gallery (justified rows) ---- */
+/* Folder contents, search results and recent downloads (media.html), in the
+   manner of Immich's timeline. Each file tile grows in proportion to its
+   aspect ratio (flex-grow = ar, basis = ar x row height) and keeps that ratio
+   (aspect-ratio), so every tile in a row ends at the same height with nothing
+   cropped; the ::after spacer holds the last, unfinished row at the natural
+   height instead of stretching its tiles across the screen. That is only the
+   first paint: layoutGallery() in media.js then sizes the tiles into rows of
+   near-equal height the way Immich does, which flex cannot - it can only grow
+   an under-full row, never shrink one.
+   Scoped to .media-gallery: public_share.html uses .media-grid too. */
+.media-gallery {
+  --row-h: var(--gallery-row-h, 190px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.media-gallery::after {
+  content: "";
+  flex-grow: 1000000;
+}
+
+@media (max-width: 700px) {
+  .media-gallery { --row-h: var(--gallery-row-h-small, 118px); gap: 2px; }
+}
+
+.media-gallery .media-tile.media-file {
+  --ar: 1;
+  flex-grow: var(--ar);
+  flex-shrink: 1;
+  flex-basis: calc(var(--ar) * var(--row-h));
+  aspect-ratio: var(--ar);
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(127, 127, 127, 0.18);
+}
+
+.media-gallery .media-tile:hover { transform: none; }
+
+.media-gallery .media-file:hover .media-tile-thumb img { filter: brightness(1.1); }
+
+.media-gallery .media-file .media-tile-thumb {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  aspect-ratio: auto;
+  border-radius: 0;
+  background: transparent;
+}
+
+.media-gallery .media-file .media-tile-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+/* Names: off unless chosen, or when there is no picture to recognise. */
+.media-gallery .media-file .media-tile-name,
+.media-gallery .media-file .media-tile-size { display: none; }
+
+body.show-tile-names .media-gallery .media-file .media-tile-name,
+.media-gallery .media-file.no-thumb .media-tile-name {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: none;
+  padding: 1.2rem 0.45rem 0.3rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0));
+  color: #fff;
+  font-size: 0.72rem;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+  overflow-wrap: normal;
+  pointer-events: none;
+}
+
+.media-tile-badge { display: none; }
+
+.media-gallery .media-tile-badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+}
+
+.media-gallery .media-tile-badge svg {
+  width: 1.15em;
+  height: 1.15em;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+.media-gallery .media-tile-badge.is-gif {
+  padding: 0.2rem 0.32rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-shadow: none;
+}
+
+.media-gallery .media-tile.tile-selected::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent-wash);
+  pointer-events: none;
+}
+
+/* Folders: compact named cards on their own line(s) above the files. */
+.media-gallery .media-folder {
+  flex: 1 1 200px;
+  max-width: 320px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.6rem;
+  row-gap: 0.1rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.media-gallery .media-folder .media-tile-icon {
+  grid-row: span 2;
+  font-size: 1.5rem;
+}
+
+.media-gallery .gallery-break {
+  flex-basis: 100%;
+  height: 0.4rem;
+}
+
+.names-toggle {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.names-toggle:hover { border-color: var(--accent); }
+
+.names-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.search-results-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---- share viewer gallery ---- */
+/* public_share.html uses the same gallery. The pool owner's remove button
+   moves to the top-left corner of a file tile: top-right is the badge's. */
+.media-gallery .media-file .tile-remove-btn {
+  left: 0.35rem;
+  right: auto;
+  z-index: 2;
+}
+
+.share-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.share-toolbar .names-toggle { margin-left: auto; }
+
+/* ---- live upscaling ---- */
+/* Says the picture on screen is the GPU's upscaled version; the tooltip
+   names the model and why it was chosen. */
+.upscale-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  white-space: nowrap;
+  animation: upscale-chip-in 0.4s ease-out;
+  /* A button: it flips between the upscaled copy and the original. */
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.upscale-chip:hover { background: var(--accent-wash, rgba(90, 150, 255, 0.12)); }
+.upscale-chip[aria-pressed="false"] { color: var(--muted); border-color: var(--line); }
+
+@keyframes upscale-chip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---- settings page ---- */
+/* settings.html: a section list on the left, the section on the right. */
+.nav-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem;
+}
+
+.nav-icon-link svg { width: 18px; height: 18px; }
+
+/* `hidden` loses to a class that sets display (.nav-link does). */
+.nav-link[hidden],
+.settings-page [hidden] { display: none !important; }
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.settings-nav {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.settings-nav a {
+  color: var(--ink);
+  text-decoration: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.92rem;
+}
+
+.settings-nav a.is-sub { padding-left: 1.4rem; }
+.settings-nav a:hover { background: var(--line); }
+
+.settings-nav a[aria-current="true"] {
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-nav-group {
+  margin: 0.9rem 0 0.2rem;
+  padding: 0 0.75rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.settings-main { padding: 1.5rem; min-height: 60vh; }
+.settings-title { margin: 0 0 1rem; }
+
+.settings-field {
+  display: grid;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
+  gap: 0.4rem 1.25rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.settings-form .settings-field:first-child,
+.settings-card h3 + .settings-field { border-top: 0; }
+
+.settings-field.is-danger .settings-label { color: var(--down); }
+.settings-label { font-weight: 600; font-size: 0.92rem; padding-top: 0.35rem; }
+.settings-control { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; min-width: 0; }
+.settings-help { color: var(--muted); font-size: 0.82rem; margin: 0; }
+.settings-error { color: var(--down); font-size: 0.85rem; }
+.settings-warning { color: var(--warn, #d9a23a); font-size: 0.85rem; }
+
+.settings-input {
+  background: rgba(127, 127, 127, 0.1);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+  font-size: 0.9rem;
+  max-width: 100%;
+}
+
+.settings-input[type="number"] { width: 7.5rem; }
+.settings-wide { width: 100%; max-width: 40rem; }
+.settings-number { display: inline-flex; align-items: center; gap: 0.4rem; }
+.settings-unit { color: var(--muted); font-size: 0.85rem; }
+.settings-switch { width: 1.15rem; height: 1.15rem; accent-color: var(--accent); margin-top: 0.45rem; }
+.settings-checks { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; }
+.settings-check { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.settings-passes { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.settings-pass { display: flex; align-items: center; gap: 0.4rem; }
+
+.settings-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.4rem 1rem;
+  width: 100%;
+}
+
+.settings-map-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.88rem; }
+
+.settings-mini {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.settings-mini:disabled { opacity: 0.4; cursor: default; }
+.settings-mini.is-danger { color: var(--down); }
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.settings-status { color: var(--muted); font-size: 0.85rem; }
+/* .btn is full-width for the dashboard's forms; here buttons sit in a row. */
+.settings-page .btn { width: auto; flex: 0 0 auto; white-space: nowrap; padding: 0.5rem 1.1rem; font-size: 0.9rem; line-height: 1.2; }
+.settings-page .btn-danger { background: var(--down); border-color: var(--down); }
+
+.settings-card {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.settings-view > .settings-card:first-child { margin-top: 0; }
+.settings-card h3 { margin: 0 0 0.6rem; font-size: 1rem; }
+.settings-card.is-soon { border-style: dashed; color: var(--muted); }
+.settings-list { margin: 0.4rem 0 0.9rem; padding-left: 1.2rem; font-size: 0.88rem; }
+
+.settings-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings-stat-value { font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere; }
+.settings-stat-label { color: var(--muted); font-size: 0.78rem; }
+.settings-table-wrap { overflow-x: auto; }
+.settings-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+
+.settings-table th,
+.settings-table td { text-align: left; padding: 0.45rem 0.5rem; border-top: 1px solid var(--line); white-space: nowrap; }
+
+.settings-table th { color: var(--muted); font-weight: 600; font-size: 0.78rem; }
+.settings-row-actions { display: flex; gap: 0.35rem; justify-content: flex-end; }
+
+.settings-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+td > .settings-badge:first-child { margin-left: 0; }
+.settings-badge.role-admin { color: var(--accent); border-color: var(--accent); }
+.settings-segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+
+.settings-seg {
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.settings-seg + .settings-seg { border-left: 1px solid var(--line); }
+.settings-seg[aria-pressed="true"] { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
+.settings-token { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.settings-token code { padding: 0.35rem 0.5rem; border: 1px solid var(--line); border-radius: 5px; word-break: break-all; }
+.settings-log { white-space: pre-wrap; font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0 0.6rem; }
+
+.settings-toast {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  padding: 0.6rem 0.95rem;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 200;
+}
+
+.settings-toast.is-error { background: var(--down); }
+
+@media (max-width: 800px) {
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings-nav { position: static; flex-direction: row; overflow-x: auto; gap: 0.25rem; }
+  .settings-nav-group { display: none; }
+  .settings-nav a,
+  .settings-nav a.is-sub { padding: 0.4rem 0.65rem; white-space: nowrap; }
+  .settings-field { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- share manager (settings) ---- */
+.share-manager { container-type: inline-size; }
+.share-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.25rem 0 0.9rem; }
+
+.share-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.share-chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); font-weight: 600; }
+.share-chip-count { color: var(--muted); font-size: 0.78rem; }
+.share-toolbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+.share-search { flex: 1 1 16rem; }
+.share-select-all { white-space: nowrap; }
+
+.share-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-wash);
+}
+
+.share-manage-row {
+  display: grid;
+  grid-template-columns: auto 52px minmax(0, 1fr) 8.5rem 11.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.share-manage-row.is-inactive { opacity: 0.6; }
+
+.share-manage-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(127, 127, 127, 0.15);
+}
+
+.share-manage-thumb.is-empty { display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
+.share-manage-main { min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+
+.share-manage-name {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-manage-name:hover { text-decoration: underline dotted; }
+.share-manage-badges { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.share-manage-badges .settings-badge { margin-left: 0; }
+.settings-badge.is-danger { color: var(--down); border-color: var(--down); }
+
+.share-tag {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.16);
+  font-size: 0.72rem;
+}
+
+.share-manage-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; color: var(--muted); font-size: 0.78rem; min-width: 0; }
+.share-manage-detail { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-manage-views { font-size: 0.85rem; }
+.share-manage-views .settings-help { font-size: 0.75rem; }
+.share-manage-expiry { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.82rem; }
+.share-expiry-text.is-danger { color: var(--down); }
+.share-expiry-select { font-size: 0.8rem; padding: 0.2rem 0.4rem; }
+.share-manage-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.2rem; }
+.share-manage-actions a.settings-mini { text-decoration: none; display: inline-block; }
+
+.share-pool-list {
+  list-style: none;
+  margin: 0 0 0.5rem 4.6rem;
+  padding: 0;
+  font-size: 0.82rem;
+}
+
+.share-pool-list li { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.2rem 0; border-top: 1px dashed var(--line); }
+.share-empty { padding: 1rem 0; }
+.shares-summary { margin: 0.4rem 0 0.6rem; }
+.shares-manage-link { display: inline-block; width: auto; }
+
+/* Measured on the list itself: the settings sidebar takes a varying share of the viewport. */
+@container (max-width: 640px) {
+  .share-manage-row { grid-template-columns: auto 44px minmax(0, 1fr); }
+  .share-manage-thumb { width: 44px; height: 44px; }
+  .share-manage-views,
+  .share-manage-expiry { grid-column: 3; }
+  .share-manage-views > div { display: inline; margin-right: 0.5rem; }
+  .share-pool-list { margin-left: 0; }
+}
+
+/* ---- download skips and the YouTube cookie warning (dashboard, settings) ---- */
+.task-skips { margin-top: 0.3rem; font-size: 0.8rem; color: var(--warn, #d9a23a); }
+
+.cookie-warning {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--warn, #d9a23a);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--warn, #d9a23a);
+}
+
+.cookie-warning a { color: inherit; font-weight: 600; }
+.settings-ok { color: var(--ok, #3fb950); }
+
+/* The details panel says when the preview shows an enhanced copy rather than the
+   file itself - an upscaled picture now (player.js setPreviewEnhancement). */
+.media-info-enhanced {
+  margin: 0 0 0.8rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.media-info-enhanced-title {
+  margin-bottom: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Buttons an enhancement offers, e.g. correcting the upscaler's model choice
+   for this one file. Marked up like the chip, so the two read as one feature. */
+.media-info-action {
+  margin: 0.45rem 0.35rem 0 0;
+  padding: 0.22rem 0.5rem;
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.media-info-action:hover:not(:disabled) { background: var(--accent-wash, rgba(90, 150, 255, 0.12)); }
+.media-info-action[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.media-info-action:disabled { cursor: default; opacity: 0.75; }
+
+/* A one-line state in the details panel, e.g. why a picture was not upscaled. */
+.media-info-note {
+  margin: 0 0 0.7rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* ---- favourites ---- */
+/* The heart on a favourited tile sits top-left: top-right is the duration badge. */
+.media-tile-fav {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.4rem;
+  z-index: 1;
+  color: #ff5d7a;
+  font-size: 0.95rem;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+}
+
+.favorite-btn[aria-pressed="true"] { color: #ff5d7a; }
+
+/* Discovery on the standalone VR start page. */
+.media-page .container.vr-landing { max-width: 1200px; padding-bottom: 3rem; }
+.vr-hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: 2.5rem; align-items: center; padding: 2.5rem 0; }
+.vr-eyebrow { font-size: .7rem; font-weight: 700; letter-spacing: .18em; color: var(--muted); margin: 0 0 .7rem; }
+.vr-hero h1 { font-size: clamp(2.3rem, 5vw, 4rem); line-height: 1.1; letter-spacing: -.035em; margin: 0 0 1rem; }
+.vr-intro { max-width: 36rem; opacity: .7; font-size: 1.05rem; }
+.vr-launch { margin: 0; padding: 1.5rem; }
+.vr-launch .btn { width: auto; margin-right: .4rem; }
+.vr-launch #vrStatus, .vr-controls { font-size: .85rem; opacity: .7; line-height: 1.6; }
+.vr-launch #vrHint, .vr-launch #vrMessage { font-size: .85rem; }
+.vr-destinations { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; margin-bottom: 2rem; }
+.vr-destination { text-align: left; color: inherit; border: 1px solid var(--line-strong, #383835); border-radius: 12px; padding: 1rem; background: var(--surface, #1c1c1a); cursor: pointer; }
+.vr-destination[aria-pressed=true] { border-color: var(--accent, #3987e5); box-shadow: inset 0 0 0 1px var(--accent, #3987e5); }
+.vr-destination strong, .vr-destination span { display: block; }
+.vr-destination span { font-size: .78rem; opacity: .65; margin-top: .4rem; line-height: 1.4; }
+.vr-discovery-head { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+.vr-discovery-head h2 { margin: 0; }
+.vr-discovery-head input, .people-search { color: inherit; background: var(--page, #131312); border: 1px solid var(--line-strong, #383835); border-radius: 8px; padding: .7rem .9rem; font: inherit; }
+.vr-discovery-head input { flex: 1; min-width: 13rem; }
+.vr-subject-tabs { display: flex; gap: .4rem; }
+.vr-subject-tabs .btn { width: auto; }
+.vr-subject-tabs [aria-pressed=true] { border-color: var(--accent, #3987e5); color: var(--accent, #3987e5); }
+.vr-discovery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 1.5rem .8rem; max-height: 30rem; overflow-y: auto; padding: .5rem; }
+.vr-subject { border: 0; background: none; color: inherit; cursor: pointer; text-align: center; padding: .3rem; min-width: 0; }
+.vr-subject-art { display: block; width: 90px; height: 90px; border-radius: 50%; overflow: hidden; background: var(--surface-hover); margin: 0 auto .6rem; border: 2px solid transparent; }
+.vr-subject img { width: 100%; height: 100%; object-fit: cover; }
+.vr-subject:hover .vr-subject-art, .vr-subject[aria-pressed=true] .vr-subject-art { border-color: var(--accent, #3987e5); }
+.vr-subject-name { display: block; font-size: .85rem; line-height: 1.3; overflow-wrap: anywhere; }
+.vr-subject-count { display: block; font-size: .73rem; opacity: .55; margin-top: .25rem; }
+.vr-subject:focus-visible, .vr-destination:focus-visible, .person-tile:focus-visible { outline: 2px solid var(--accent, #3987e5); outline-offset: 3px; }
+@media (max-width: 700px) { .vr-hero { grid-template-columns: 1fr; gap: 1rem; padding: 1rem 0; } .vr-destinations { grid-template-columns: repeat(2, 1fr); } .vr-launch .btn { margin-bottom: .4rem; } }
+
+/* A reference query is separate from the library and never creates a library upload. */
+.image-search-dialog { width: min(1200px, 94vw); max-height: 92vh; overflow-y: auto; margin: auto; padding: 1.5rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 16px; }
+.image-search-dialog::backdrop { background: rgba(0,0,0,.72); }
+.image-search-head { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.image-search-head h2 { margin: 0 0 .5rem; }
+.image-search-head p, .image-search-query p { color: var(--muted); font-size: .86rem; line-height: 1.5; }
+.image-search-head .btn, .image-search-types .btn, .image-search-upload, #imageSearchMore { width: auto; }
+.image-search-query { display: flex; align-items: center; gap: 1.2rem; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+#imageSearchReference { width: 120px; height: 120px; border-radius: 8px; object-fit: contain; background: var(--page); }
+.image-search-upload { display: inline-block; cursor: pointer; margin-bottom: .5rem; }
+.image-search-input { width: 1px; height: 1px; opacity: 0; position: absolute; }
+.image-search-upload:has(+input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.image-search-types { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0 1rem; }
+.image-search-types [aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+.image-search-warning { color: var(--warn); font-size: .85rem; margin: .5rem 0; }
+#imageSearchGrid { margin: 1rem 0; }
+.image-match-reasons { position: absolute; left: 6px; bottom: 6px; right: 6px; display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none; z-index: 2; }
+.image-match-reasons span { font-size: .65rem; padding: .2rem .4rem; border-radius: 4px; background: rgba(16,16,15,.88); color: #e6e4db; }
+@media(max-width:600px) { .image-search-dialog { padding: .8rem; } .image-search-query { align-items: start; flex-direction: column; } }
+
+#imageSearchCaption { max-width: 75ch; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+.discovery-search { display:flex;flex-direction:column;gap:6px;margin:12px 0;color:var(--muted);font-size:13px; }
+.discovery-search input { width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-sm,8px);background:var(--surface-2);color:var(--ink); }
+.discovery-more { display:block;margin:16px auto 4px; }
+.discovery-more[hidden] { display:none; }
+
+/* VR launch search and per-variant character choices. */
+.vr-search-form { display: grid; grid-template-columns: minmax(14rem, 2fr) repeat(4, minmax(8rem, 1fr)) auto; gap: .75rem; align-items: end; }
+.vr-search-form label { display: grid; gap: .35rem; font-size: .82rem; color: var(--muted); }
+.vr-search-form input[type="search"], .vr-search-form select { min-width: 0; width: 100%; color: inherit; background: var(--page, #131312); border: 1px solid var(--line-strong, #383835); border-radius: 8px; padding: .7rem .8rem; font: inherit; }
+.vr-search-form .vr-search-favorite { display: flex; align-items: center; gap: .5rem; min-height: 2.7rem; white-space: nowrap; }
+.vr-search-form > .btn { width: auto; white-space: nowrap; }
+.vr-search-more { grid-column: 1 / -1; border-top: 1px solid var(--line-strong, #383835); padding-top: .55rem; }
+.vr-search-more summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+.vr-search-extra { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; padding: .8rem 0 .2rem; }
+.vr-search-extra fieldset { grid-column: 1 / -1; border: 1px solid var(--line-strong, #383835); border-radius: 8px; display: flex; flex-wrap: wrap; gap: .45rem .9rem; }
+.vr-search-extra legend { color: var(--muted); font-size: .82rem; padding: 0 .35rem; }
+.vr-filter-content-option { display: inline-flex !important; align-items: center; gap: .4rem !important; }
+.vr-subject-card { min-width: 0; text-align: center; }
+.vr-people-options { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; font-size: .82rem; }
+.vr-people-options label { display: inline-flex; align-items: center; gap: .4rem; }
+.vr-people-options select { color: inherit; background: var(--page, #131312); border: 1px solid var(--line-strong, #383835); border-radius: 8px; padding: .45rem .55rem; font: inherit; }
+.vr-variant-list { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem; margin-top: .4rem; }
+.vr-variant { border: 1px solid var(--line-strong, #383835); border-radius: 999px; background: var(--surface, #1c1c1a); color: inherit; cursor: pointer; font: inherit; font-size: .68rem; line-height: 1.2; padding: .3rem .5rem; }
+.vr-variant:hover, .vr-variant:focus-visible { border-color: var(--accent, #3987e5); }
+.vr-search-form :focus-visible, .vr-variant:focus-visible { outline: 2px solid var(--accent, #3987e5); outline-offset: 2px; }
+@media (max-width: 900px) { .vr-search-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vr-search-form .vr-search-query { grid-column: 1 / -1; } .vr-search-extra { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .vr-search-form { grid-template-columns: 1fr; } .vr-search-form .vr-search-query { grid-column: auto; } .vr-search-form > .btn { width: 100%; } .vr-search-extra { grid-template-columns: 1fr; } }

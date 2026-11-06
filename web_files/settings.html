@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings</title>
+  <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
+       it into an app: a local copy is a copy that drifts. -->
+  <link rel="stylesheet" href="/css/atrihord.css">
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body class="settings-page">
+  <div class="top-bar">
+    <a href="/index.html" class="nav-link">Dashboard</a>
+    <a href="/media.html" class="nav-link">Media Library</a>
+    <div data-ah-user data-logout="/logout"></div>
+  </div>
+
+  <div class="container">
+    <div class="header">
+      <h1>Settings</h1>
+    </div>
+    <div class="settings-layout">
+      <nav id="settingsNav" class="settings-nav" aria-label="Settings sections"></nav>
+      <main id="settingsMain" class="card settings-main" aria-live="polite"></main>
+    </div>
+  </div>
+
+  <div id="settingsToast" class="settings-toast" role="status" hidden></div>
+
+  <script src="/js/stereo3d.js"></script>
+  <script src="/js/settings.js"></script>
+  <!-- The estate's theme and user widget; Appearance drives its theme. -->
+  <script src="/js/atrihord-user.js" defer></script>
+</body>
+</html>

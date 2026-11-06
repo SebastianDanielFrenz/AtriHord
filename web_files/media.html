@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>media-dl</title>
+  <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
+       it into an app: a local copy is a copy that drifts. -->
+  <link rel="stylesheet" href="/css/atrihord.css">
+  <link rel="stylesheet" href="/css/main.css">
+  <!-- The redesign: scoped to body.next-ui, loaded after main.css, which stays untouched. -->
+  <link rel="stylesheet" href="/css/leaflet.css?v=1">
+  <link rel="stylesheet" href="/css/media-next.css?v=15">
+</head>
+<body class="media-page next-ui" data-dest="folders">
+  <!-- Top bar: brand, the search pill (every id media.js binds is in it), user widget. The
+       sidebar and the phone tab bar below it drive the same functions the old buttons did. -->
+  <header class="nx-topbar" id="nxTopbar">
+    <a href="/media-next.html" class="nx-brand" id="nxBrand" aria-label="media-dl, back to the folders">
+      <svg class="nx-logo" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5.5"/><path d="M10 8v8l6-4z"/></svg>
+      <span class="nx-brand-name">media-dl</span>
+    </a>
+    <div class="nx-search-wrap">
+    <div class="media-search-bar">
+      <svg class="media-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle><path d="M20.5 20.5 16.7 16.7"></path>
+      </svg>
+      <!-- The character, person or favourites being searched within. Words typed
+           beside it narrow that subject; the x (or Backspace in an empty box)
+           searches everything again. -->
+      <button type="button" id="mediaSubjectChip" class="search-subject" hidden
+              title="Searching within this - click to search everything again">
+        <span class="search-subject-label"></span><span class="search-subject-x" aria-hidden="true">×</span>
+      </button>
+      <input type="text" id="mediaSearchInput" placeholder="Search downloaded media by name or folder, or * for everything...">
+      <!-- The mode is a chip, not a select: it is the answer to "what am I
+           searching", which is worth reading at a glance and only occasionally
+           worth changing. A select shows a control; a chip shows the state. -->
+      <div class="search-chip-wrap">
+        <button type="button" id="mediaSearchModeChip" class="search-chip"
+                aria-haspopup="true" aria-expanded="false"
+                title="What to search in">Filename</button>
+        <div id="mediaSearchModeMenu" class="search-chip-menu" hidden>
+          <button type="button" class="search-chip-opt" data-mode="filename">Filename</button>
+          <button type="button" class="search-chip-opt" data-mode="context">Context</button>
+          <button type="button" class="search-chip-opt" data-mode="ocr">Text in image</button>
+          <button type="button" class="search-chip-opt" data-browse="people">Face / person…</button>
+          <button type="button" class="search-chip-opt" data-mode="character">Character</button>
+          <button type="button" class="search-chip-opt" data-mode="all">Everything</button>
+        </div>
+      </div>
+      <button type="button" id="imageSearchBtn" class="search-chip nx-icon-chip" aria-label="Search by image" title="Search by image: find visually similar pictures and related descriptions, characters and faces"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5a2 2 0 0 1 2-2h1.6l1.2-1.8h6.4l1.2 1.8H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.3"/></svg></button>
+      <div class="media-filter">
+        <button type="button" id="mediaFilterBtn" class="media-filter-btn"
+                aria-expanded="false" title="Filter by media type, orientation, resolution and frame rate">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h10M18 7h2M4 12h3M11 12h9M4 17h9M17 17h3"></path>
+            <circle cx="16" cy="7" r="2"></circle><circle cx="9" cy="12" r="2"></circle>
+            <circle cx="15" cy="17" r="2"></circle>
+          </svg>
+          <span id="mediaFilterCount" class="media-filter-count" hidden>0</span>
+        </button>
+        <div id="mediaFilterPanel" class="media-filter-panel" hidden data-self-managed>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Media type</div>
+            <div class="mf-note">A GIF answers to both Images and Videos - a library has both kinds of GIF in it.</div>
+            <div class="mf-opts" id="mfKind"></div>
+          </div>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Content</div>
+            <div class="mf-note">Rated by the AI index. Pick several: Safe and Suggestive together are safe for work. A file that is not rated yet matches none of them.</div>
+            <div class="mf-opts" id="mfContent"></div>
+          </div>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Favorites</div>
+            <div class="mf-opts" id="mfFavorites"></div>
+          </div>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Orientation</div>
+            <div class="mf-opts" id="mfOrientation"></div>
+          </div>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Minimum resolution &mdash; either edge</div>
+            <div class="mf-note">Passes if the longest side meets the standard. The union of the two below.</div>
+            <div class="mf-opts" id="mfResAny"></div>
+          </div>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Minimum resolution &mdash; horizontal</div>
+            <div class="mf-note">Width meets the standard: fills a landscape screen edge to edge.</div>
+            <div class="mf-opts" id="mfResH"></div>
+          </div>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Minimum resolution &mdash; vertical</div>
+            <div class="mf-note">Height meets the standard: fills a portrait screen top to bottom, bars at the sides.</div>
+            <div class="mf-opts" id="mfResV"></div>
+          </div>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Minimum frame rate</div>
+            <div class="mf-note">Videos only. 29.97 counts as 30 and 59.94 as 60. With a maximum as well it is a band: at least 30 and at most 30 is just 30 fps.</div>
+            <div class="mf-opts" id="mfFpsMin"></div>
+          </div>
+          <div class="mf-cat">
+            <div class="mf-cat-head">Maximum frame rate</div>
+            <div class="mf-note">25 takes in film and PAL (23.976, 24, 25); 15 finds GIFs that were turned into videos.</div>
+            <div class="mf-opts" id="mfFpsMax"></div>
+          </div>
+          <div class="mf-foot">
+            <span id="mediaFilterCoverage" class="mf-note"></span>
+            <button type="button" id="mediaFilterClear" class="media-filter-clear">Clear all</button>
+          </div>
+        </div>
+      </div>
+    </div>
+      <div id="mediaSuggest" class="media-suggest" hidden></div>
+    </div>
+    <div class="nx-top-actions">
+      <!-- VR: the sidebar's VR row drives this button (media.js paints and hides it); it stays in
+           the page, out of sight, because media.js binds it and sets its state. -->
+    <button type="button" id="mediaVrTopBtn" class="nav-link" hidden
+            data-help="Open the media library in VR, starting at this view. Trigger: play/pause. A/X: recenter. B/Y: exit VR."
+            title="View in VR">VR</button>
+      <div data-ah-user data-logout="/logout"></div>
+    </div>
+    <!-- The selection bar: replaces the top bar while something is selected (css/media-next.css hides
+         the rest of the header, js/next-select.js fills and wires this). Every button is an icon whose
+         name shows on hover; 3D and Delete are admin features and hidden for guests. -->
+    <div class="nx-selbar" id="nxSelBar" role="toolbar" aria-label="Selection" hidden>
+      <button type="button" class="nx-selbtn" id="nxSelClose" data-tip="Clear selection (Esc)" aria-label="Clear selection"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <span class="nx-selcount" id="nxSelCount" aria-live="polite"></span>
+      <span class="nx-selspacer"></span>
+      <button type="button" class="nx-selbtn" id="nxSelFav" data-tip="Add to favorites" aria-label="Add to favorites"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.3s-7.5-4.5-7.5-10.2A4.3 4.3 0 0 1 12 7.5a4.3 4.3 0 0 1 7.5 2.6c0 5.7-7.5 10.2-7.5 10.2z"/></svg></button>
+      <button type="button" class="nx-selbtn" id="nxSelPool" data-tip="Add to pool" aria-label="Add to pool"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg></button>
+      <button type="button" class="nx-selbtn" id="nxSelDownload" data-tip="Download (files, one after another)" aria-label="Download"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></svg></button>
+      <button type="button" class="nx-selbtn" id="nxSel3d" data-admin-only data-tip="Convert to 3D" aria-label="Convert to 3D"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l7.5 4.2v8.6L12 20.5l-7.5-4.2V7.7z"/><path d="M4.5 7.7L12 12l7.5-4.3M12 12v8.5"/></svg></button>
+      <button type="button" class="nx-selbtn nx-seldanger" id="nxSelDelete" data-admin-only data-tip="Delete (Del)" aria-label="Delete"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4l.8-12.5M10 11v5M14 11v5"/></svg></button>
+    </div>
+  </header>
+
+  <aside class="nx-sidebar" id="nxSidebar">
+    <nav class="nx-nav" id="nxNav" aria-label="Library">
+      <div class="nx-group">
+        <button type="button" class="nx-row" id="navTimeline" data-nav="timeline"  title="Every photo and video by date"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span class="nx-label">Timeline</span></button>
+        <button type="button" class="nx-row" id="navExplore" data-nav="explore"  title="People and characters the library knows (places arrive later)"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.6 8.4l-2 5.2-5.2 2 2-5.2z"/></svg><span class="nx-label">Explore</span></button>
+        <button type="button" class="nx-row" id="navMap" data-nav="map"  title="Pictures with a GPS position, on a map"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></svg><span class="nx-label">Map</span></button>
+        <button type="button" class="nx-row" id="charactersBtn" data-nav="characters"  title="Browse the characters found in the library"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.2 14.2c.9 1.3 2.1 2 3.8 2s2.9-.7 3.8-2"/><path d="M9 9.8v.4M15 9.8v.4"/></svg><span class="nx-label">Characters</span></button>
+        <button type="button" class="nx-row" id="navShares" data-nav="shares"  title="Share links and pools"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span class="nx-label">Shares</span></button>
+      </div>
+      <div class="nx-group">
+        <div class="nx-group-label">Library</div>
+        <button type="button" class="nx-row" id="favoritesBtn" data-nav="favorites"  title="The files you marked as favorites"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.3s-7.5-4.5-7.5-10.2A4.3 4.3 0 0 1 12 7.5a4.3 4.3 0 0 1 7.5 2.6c0 5.7-7.5 10.2-7.5 10.2z"/></svg><span class="nx-label">Favorites</span></button>
+        <button type="button" class="nx-row" id="navFolders" data-nav="folders"  title="Browse by folder"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span class="nx-label">Folders</span></button>
+        <button type="button" class="nx-row" id="navRecent" data-nav="recent"  title="Recently downloaded"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></svg><span class="nx-label">Recent</span></button>
+        <!-- Admin only (js/next-trash.js): the deleted files, batch by batch, restorable until deleted for good. -->
+        <button type="button" class="nx-row" id="navTrash" data-nav="trash" data-admin-only title="Deleted files: restore them or delete them for good"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4l.8-12.5M10 11v5M14 11v5"/></svg><span class="nx-label">Trash</span></button>
+        <!-- Admin only (js/next-upload.js): put files into a chosen folder of a library by hand. -->
+        <button type="button" class="nx-row" id="navUpload" data-nav="upload" data-admin-only title="Upload files or folders into a library"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5V4.5M7.5 9L12 4.5 16.5 9M5 19.5h14"/></svg><span class="nx-label">Upload</span></button>
+      </div>
+      <div class="nx-group">
+        <div class="nx-group-label">More</div>
+        <a class="nx-row" href="/music.html" title="The music library"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg><span class="nx-label">Music</span></a>
+        <a class="nx-row" id="genreMapLink" href="/genres.html" title="The music library as a map: tracks that sound alike sit together"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5l6-2 6 2 6-2v13l-6 2-6-2-6 2z"/><path d="M9 4.5v13M15 6.5v13"/></svg><span class="nx-label">Genre map</span></a>
+        <button type="button" class="nx-row" id="navVr" hidden title="View in VR"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="7.5" width="19" height="9.5" rx="3"/><path d="M9 17c.8-1.5 1.8-2.2 3-2.2s2.2.7 3 2.2"/></svg><span class="nx-label">VR</span></button>
+        <button type="button" class="nx-row nx-phone-only" id="navImageSearch"  title="Find visually similar pictures"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5a2 2 0 0 1 2-2h1.6l1.2-1.8h6.4l1.2 1.8H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.3"/></svg><span class="nx-label">Search by image</span></button>
+        <a class="nx-row" id="navDownloads" href="/index.html" data-admin-only title="The download dashboard"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></svg><span class="nx-label">Downloads</span></a>
+      </div>
+      <!-- Admin only: shown once /api/me says admin (next-shell.js). -->
+      <div class="nx-group" id="nxAdminGroup" hidden>
+        <div class="nx-group-label">Admin</div>
+        <button type="button" class="nx-row" id="reviewBtn" data-nav="review"  title="Files that may not belong to the profile they came from"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg><span class="nx-label">Review</span><span id="reviewBadge" class="media-filter-count" hidden>0</span></button>
+        <button type="button" class="nx-row" id="trainingBtn" data-nav="training"  title="Judge random files blind, to measure how good the suggestions are"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7l1.5 1.5L8 6M4 13l1.5 1.5L8 12M4 19l1.5 1.5L8 18M11 7h9M11 13h9M11 19h9"/></svg><span class="nx-label">Training</span></button>
+        <button type="button" class="nx-row" id="checkBtn" data-nav="check"  title="Look back over the answers you gave in the training queue"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg><span class="nx-label">Check</span></button>
+        <button type="button" class="nx-row" id="navLibraries" data-nav="libraries"  title="Libraries on the server"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg><span class="nx-label">Libraries</span></button>
+        <a href="/settings.html" id="settingsLink" class="nx-row" title="Settings" hidden><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="nx-label">Settings</span></a>
+      </div>
+    </nav>
+    <!-- Disk space, from /api/system-stats (admin only, so a guest never sees the box). -->
+    <div class="nx-storage" id="nxStorage" hidden>
+      <div class="nx-storage-title"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg><span>Storage</span></div>
+      <div class="nx-storage-text" id="nxStorageText"></div>
+      <div class="nx-storage-bar" id="nxStorageBar" role="progressbar" aria-label="Disk space used" aria-valuemin="0" aria-valuemax="100"><div id="nxStorageFill"></div></div>
+    </div>
+  </aside>
+  <div class="nx-sheet-backdrop" id="nxSheetBackdrop"></div>
+
+  <main class="nx-main" id="nxMain">
+    <div id="mediaSearchNote" class="media-search-note" hidden></div>
+
+    <div id="charactersCard" class="card media-browser-card" hidden>
+      <div class="media-browser-header">
+        <h3 id="charactersTitle" style="margin:0">Characters</h3>
+        <span id="charactersCount" class="media-sort-status"></span>
+        <button type="button" id="charactersClose" class="btn btn-quiet">Back to files</button>
+      </div>
+      <label class="discovery-search">Search all characters<input id="charactersSearch" type="search" placeholder="Name, series or variant…" autocomplete="off"></label>
+      <div id="charactersGrid" class="character-grid"></div>
+      <div id="charactersEmpty" class="media-empty" hidden>
+        Nothing tagged yet - the indexer has not reached enough files.
+      </div>
+    </div>
+
+    <div id="reviewCard" class="card media-browser-card" hidden>
+      <div class="media-browser-header">
+        <h3 style="margin:0">Suggested for deletion</h3>
+        <span id="reviewCount" class="media-sort-status"></span>
+        <button type="button" id="reviewProfilesBtn" class="btn btn-quiet"
+                title="Which account is expected to post what">Profiles</button>
+        <button type="button" id="reviewScanBtn" class="btn btn-quiet"
+                title="Look at every tagged file again">Rescan</button>
+        <button type="button" id="reviewClose" class="btn btn-quiet">Back to files</button>
+      </div>
+      <!-- Said out loud, on the screen where it matters: this is a proposal
+           list and the machine has not touched anything. -->
+      <div class="media-search-note">
+        Nothing here has been deleted. Each file is a guess that it does not
+        match the profile it came from — <b>Keep</b> dismisses it for good,
+        <b>Delete</b> moves it to the trash and bans it from coming back.
+      </div>
+      <div class="review-filter">
+        <label for="reviewReason" class="review-filter-label">Rule</label>
+        <select id="reviewReason" class="review-filter-select">
+          <option value="">All rules</option>
+        </select>
+      </div>
+      <div id="reviewProfiles" class="review-profiles" hidden></div>
+      <div id="reviewGrid" class="review-grid"></div>
+      <div id="reviewBar" class="training-bar" hidden>
+        <span id="reviewSelected" class="training-staged"></span>
+        <button type="button" id="reviewSelectAll" class="btn btn-quiet">Select all</button>
+        <button type="button" id="reviewKeep" class="btn btn-quiet"
+                title="The suggestion was wrong - these do belong">Not a mismatch</button>
+        <button type="button" id="reviewKeepAnyway" class="btn btn-quiet"
+                title="The suggestion was right, but keep the files anyway">Keep anyway</button>
+        <button type="button" id="reviewDelete" class="btn review-del"
+                title="Move to the trash and ban them from coming back">Delete selected</button>
+      </div>
+      <div id="reviewEmpty" class="media-empty" hidden>
+        Nothing looks out of place — or the tag pass has not reached enough files yet.
+      </div>
+    </div>
+
+    <div id="trainingCard" class="card media-browser-card" hidden>
+      <div class="media-browser-header">
+        <h3 style="margin:0">Training queue</h3>
+        <span id="trainingStats" class="media-sort-status"></span>
+        <button type="button" id="trainingMoreBtn" class="btn btn-quiet">Another batch</button>
+        <a id="trainingExport" class="btn btn-quiet" href="/api/media/labels/export"
+           download="media-labels.jsonl" title="Every label so far, as JSON lines">Export</a>
+        <button type="button" id="trainingClose" class="btn btn-quiet">Back to files</button>
+      </div>
+      <!-- The point of this screen, said plainly, because a labeller who does
+           not know what is being asked produces labels nobody can use. -->
+      <div class="media-search-note">
+        <b>One question only:</b> does the big picture look like the
+        <b>small ones underneath it</b>? Those are other files from the same
+        account, so you never need to know or look up whether it is an artist
+        or a cosplayer — if the strip is drawings and the picture is a
+        photograph, it does not fit, and the other way round. Food, memes and
+        screenshots of text do not fit either account.
+        <br>
+        It is <b>not</b> “is this the same person” — a cosplayer posting a
+        photo of someone else still fits. It is <b>not</b> “is this any good”,
+        and <b>not</b> “do I want this file”; keeping something you like is the
+        review queue’s <b>Keep anyway</b>. Nothing here is deleted.
+        <br>
+        If the strip is too mixed to tell, press <b>?</b> — that is a real
+        answer and it is left out of the numbers.
+        <br>
+        The sample is <b>random</b> and you are not told what the rules think,
+        on purpose: that is the only way to measure <b>what they miss</b>,
+        which the review queue can never show.
+      </div>
+      <div id="trainingGrid" class="review-grid"></div>
+      <div id="trainingBar" class="training-bar" hidden>
+        <span id="trainingStaged" class="training-staged"></span>
+        <button type="button" id="trainingClear" class="btn btn-quiet">Clear answers</button>
+        <button type="button" id="trainingSubmit" class="btn">Submit answers</button>
+      </div>
+      <div id="trainingEmpty" class="media-empty" hidden>
+        Nothing left to sample — every tagged file with an account has been judged.
+      </div>
+    </div>
+
+    <div id="checkCard" class="card media-browser-card" hidden>
+      <div class="media-browser-header">
+        <h3 style="margin:0">Check my answers</h3>
+        <span id="checkCount" class="media-sort-status"></span>
+        <select id="checkVerdict" class="people-show" title="Which answers to look at">
+          <option value="disagree">Where we disagreed</option>
+          <option value="not_belongs">I said: does not fit</option>
+          <option value="belongs">I said: fits</option>
+          <option value="unsure">I said: not sure</option>
+          <option value="all">Everything I answered</option>
+        </select>
+        <button type="button" id="checkClose" class="btn btn-quiet">Back to files</button>
+      </div>
+      <div class="media-search-note">
+        <b>Where you and the tagger disagreed</b> — the useful half of this
+        screen. Two directions, and they mean opposite things:
+        <br>
+        <b>The tagger flagged it and you kept it</b> — outlined <b>red</b>, and
+        listed first. A rule fired wrongly; these are rare and each one is a
+        rule to reconsider.
+        <br>
+        <b>The tagger missed it</b> — plain outline. You said “does not fit”
+        and the rules said nothing. Blind spots, and the pile a learned rule
+        would be trained on.
+        <br>
+        The other filters list your answers back instead, and there an
+        <b>amber</b> outline means the consistency checks queried that answer —
+        a different question entirely, which is why it is not shown here.
+      </div>
+      <div id="checkGrid" class="review-grid"></div>
+      <div id="checkEmpty" class="media-empty" hidden>Nothing answered that way yet.</div>
+    </div>
+
+    <div id="peopleCard" class="card media-browser-card" hidden>
+      <div class="media-browser-header">
+        <h3 style="margin:0">People</h3>
+        <span id="peopleCount" class="media-sort-status"></span>
+        <input type="search" id="peopleSearch" class="people-search" placeholder="Find a recognized person…" aria-label="Find a recognized person">
+        <label class="people-toggle">
+          <input type="checkbox" id="peopleNamedOnly"> Named only
+        </label>
+        <select id="peopleShow" class="people-show" title="Which faces to show">
+          <option value="real">Real people</option>
+          <option value="all">Everyone, drawn included</option>
+          <option value="hidden">Hidden</option>
+        </select>
+        <button type="button" id="peopleClose" class="btn btn-quiet">Back to files</button>
+      </div>
+      <div id="peopleGrid" class="people-grid"></div>
+      <div id="peopleEmpty" class="media-empty" hidden>
+        No one grouped yet - the face pass has not covered enough files.
+      </div>
+    </div>
+
+    <div id="browseSections">
+      <!-- Folders: breadcrumb and the folder's tools in one slim bar, then the grid. -->
+      <div class="card media-browser-card nx-folders" id="foldersPane">
+        <div class="media-browser-header nx-pane-bar">
+          <nav id="mediaBreadcrumb" class="media-breadcrumb" aria-label="Folder path"></nav>
+          <div class="folder-actions" id="folderActions" style="display:none;">
+            <button type="button" id="shareFolderBtn" title="Create a public link to this whole folder">Share folder</button>
+            <button type="button" id="folderToPoolBtn" title="Add this whole folder to a share pool">Add folder to pool…</button>
+          </div>
+          <!-- The old Select mode, kept as a drag-select switch: with it on, dragging across the tiles
+               draws a band and a click always toggles. Everything else about selecting needs no mode
+               (hover circle, Shift-click, long-press), so this is optional. -->
+          <button type="button" id="nxUploadHere" class="select-mode-btn nx-upload-here" data-admin-only
+                  title="Upload files into this folder">Upload here</button>
+          <button type="button" id="selectModeBtn" class="select-mode-btn" aria-pressed="false"
+                  title="Drag across the tiles to select them (the hover circle and Shift-click work without this)">Drag select</button>
+          <div class="media-sort-bar">
+            <label for="mediaSortSelect">Sort</label>
+            <select id="mediaSortSelect">
+              <option value="name">Name</option>
+              <option value="artist">Artist name</option>
+              <option value="id">ID</option>
+              <option value="latest">Last updated</option>
+              <option value="size">Size</option>
+            </select>
+            <button type="button" id="mediaSortDirBtn" title="Reverse sort order">&#x2193;</button>
+            <span id="mediaSortStatus" class="media-sort-status"></span>
+            <button type="button" class="names-toggle" data-names-toggle aria-pressed="false"
+                    title="Show file names on the tiles">Names</button>
+          </div>
+        </div>
+        <div id="mediaGrid" class="media-grid media-gallery"></div>
+        <div id="mediaEmpty" class="media-empty" style="display:none;">This folder is empty.</div>
+
+      </div>
+
+      <div class="card recent-media-card" id="recentMediaCard">
+        <h2>Recently Downloaded</h2>
+
+        <div id="recentMediaScroll" class="recent-media-scroll">
+          <div id="recentMediaGrid" class="media-grid media-gallery"></div>
+          <div id="recentMediaLoading" class="media-loading">Loading...</div>
+          <div id="recentMediaEmpty" class="media-empty" style="display:none;">Nothing downloaded yet.</div>
+          <div id="recentMediaEnd" class="media-empty" style="display:none;">No more items.</div>
+        </div>
+      </div>
+
+
+      <div class="card shares-card" id="rootsCard">
+        <h2>Libraries</h2>
+        <p class="shares-hint">Add any folder on the server as an extra library alongside Downloads. New libraries are hidden from guests until you tick "Guests". Removing one only drops it from this list - nothing on disk is deleted.</p>
+        <div class="shares-pool-create">
+          <input type="text" id="newRootName" placeholder="Display name...">
+          <input type="text" id="newRootPath" placeholder="/absolute/path/on/server">
+          <button type="button" class="btn" id="addRootBtn">Add Library</button>
+        </div>
+        <div id="rootsError" class="alert alert-error" role="alert" style="display:none;"></div>
+        <div id="rootsList" class="shares-list"></div>
+      </div>
+
+
+      <div class="card shares-card" id="sharesCard">
+        <h2>Shares</h2>
+        <p class="shares-hint">Right-click any file or folder to share it by link - no login needed for whoever has the link. Add several files/folders to a pool to share them together under one link.</p>
+        <div class="shares-pool-create">
+          <input type="text" id="newPoolLabel" placeholder="New pool name...">
+          <button type="button" class="btn" id="createPoolBtn">Create Pool</button>
+        </div>
+        <div id="sharesList" class="shares-list"></div>
+      </div>
+    </div>
+
+
+    <div class="card recent-media-card" id="searchResultsCard" style="display:none;">
+      <div class="search-results-head">
+        <h2 id="searchResultsTitle">Search Results</h2>
+        <div class="search-results-actions">
+          <button type="button" id="shareQueryBtn" class="btn btn-quiet" hidden
+                  title="A public link to this character or person with the filters that are on now. It stays live: new matching downloads show up in it.">Share link</button>
+          <button type="button" class="names-toggle" data-names-toggle aria-pressed="false"
+                  title="Show file names on the tiles">Names</button>
+        </div>
+      </div>
+      <!-- One circle per spelling danbooru gives this character - a costume, a
+           class, an ascension - plus "All". Only shown for a character pool
+           that actually has more than one; see renderVariantStrip. -->
+      <div id="characterVariants" class="variant-strip" hidden></div>
+      <div id="searchResultsScroll" class="recent-media-scroll">
+        <div id="searchResultsGrid" class="media-grid media-gallery"></div>
+        <div id="searchResultsLoading" class="media-loading" style="display:none;">Loading...</div>
+        <div id="searchResultsEmpty" class="media-empty" style="display:none;">No matches found.</div>
+        <div id="searchResultsEnd" class="media-empty" style="display:none;">No more results.</div>
+      </div>
+    </div>
+
+    <!-- Timeline: js/next-timeline.js fills it from the server's date index; body[data-dest="timeline"] shows it. -->
+    <section class="nx-timeline" id="nxTimeline" aria-labelledby="nxTlTitle">
+      <div class="nx-trash-head">
+        <h2 id="nxTlTitle">Timeline</h2>
+        <span class="nx-trash-sum" id="nxTlSum"></span>
+        <div class="nx-trash-chips" id="nxTlKinds" role="group" aria-label="Show">
+          <button type="button" class="nx-share-chip" data-kinds="image,video" aria-pressed="true">All</button>
+          <button type="button" class="nx-share-chip" data-kinds="image" aria-pressed="false">Photos</button>
+          <button type="button" class="nx-share-chip" data-kinds="video" aria-pressed="false">Videos</button>
+        </div>
+      </div>
+      <div class="media-loading" id="nxTlStatus" hidden></div>
+      <div class="nx-tl-years" id="nxTlYears" aria-label="Jump to a year"></div>
+      <div class="nx-tl-list" id="nxTlList"></div>
+    </section>
+
+    <!-- Explore: js/next-explore.js fills the rows; body[data-dest="explore"] shows it. -->
+    <section class="nx-explore" id="nxExplore" aria-labelledby="nxExTitle">
+      <div class="nx-trash-head"><h2 id="nxExTitle">Explore</h2></div>
+      <div class="media-loading" id="nxExStatus" hidden></div>
+      <div id="nxExRows"></div>
+    </section>
+
+    <!-- Map: js/next-map.js; body[data-dest="map"] shows it. Leaflet is vendored (js/vendor/leaflet.js). -->
+    <section class="nx-map" id="nxMap" aria-labelledby="nxMapTitle">
+      <div class="nx-trash-head"><h2 id="nxMapTitle">Map</h2><span class="nx-trash-sum" id="nxMapSum"></span></div>
+      <div class="media-loading" id="nxMapStatus" hidden></div>
+      <div id="nxMapCanvas" class="nx-map-canvas"></div>
+      <div id="nxMapList" class="nx-map-list" hidden></div>
+    </section>
+
+    <!-- Trash (admin): the batches the delete dialog, the review queue and the automatic jobs made.
+         js/next-trash.js fills it; body[data-dest="trash"] shows it (css/media-next.css). -->
+    <section class="nx-trash" id="nxTrash" aria-labelledby="nxTrashTitle" hidden>
+      <div class="nx-trash-head">
+        <h2 id="nxTrashTitle">Trash</h2>
+        <span class="nx-trash-sum" id="nxTrashSum"></span>
+        <button type="button" class="btn btn-quiet" id="nxTrashRefresh">Refresh</button>
+      </div>
+      <p class="shares-hint">Deleted files wait here, batch by batch. Restore puts a batch back where it was; Delete forever removes it from the disk for good.</p>
+      <div class="nx-trash-bar">
+        <div class="nx-trash-chips" id="nxTrashChips" role="group" aria-label="Where the batches came from"></div>
+        <input type="search" class="nx-share-search" id="nxTrashFind" placeholder="Find a file name" aria-label="Find a file name in the trash" autocomplete="off">
+      </div>
+      <div class="media-loading" id="nxTrashStatus" hidden></div>
+      <div class="nx-trash-list" id="nxTrashList"></div>
+      <div class="nx-trash-more" id="nxTrashMore" hidden><button type="button" class="btn btn-quiet" id="nxTrashMoreBtn">Show more</button></div>
+    </section>
+
+    <!-- Upload (admin): js/next-upload.js fills it; body[data-dest="upload"] shows it (css/media-next.css).
+         Nothing is sent until the Upload button is pressed. -->
+    <section class="nx-upload" id="nxUpload" aria-labelledby="nxUploadTitle" hidden>
+      <div class="nx-up-head">
+        <h2 id="nxUploadTitle">Upload</h2>
+        <span class="nx-up-limits" id="nxUpLimits"></span>
+      </div>
+
+      <div class="nx-up-card" aria-labelledby="nxUpStep1">
+        <h3 id="nxUpStep1">1. Where to</h3>
+        <div class="nx-up-dest">
+          <label class="nx-up-field">Library
+            <select id="nxUpRoot"></select>
+          </label>
+          <label class="nx-up-field nx-up-path">Folder (typed or chosen below; a missing folder is created)
+            <input type="text" id="nxUpPath" autocomplete="off" spellcheck="false" placeholder="Library top">
+          </label>
+        </div>
+        <div class="nx-up-crumbs" id="nxUpCrumbs" aria-label="Chosen folder"></div>
+        <div class="nx-up-note is-error" id="nxUpPathError" role="alert" hidden></div>
+        <div class="nx-up-browser" id="nxUpBrowser">
+          <div class="nx-up-browser-bar">
+            <span id="nxUpBrowserNote" class="nx-up-muted"></span>
+            <button type="button" class="btn btn-quiet" id="nxUpNewFolderBtn">New folder</button>
+          </div>
+          <form class="nx-up-newfolder" id="nxUpNewFolder" hidden>
+            <input type="text" id="nxUpNewFolderName" autocomplete="off" spellcheck="false" placeholder="Name of the new folder" aria-label="Name of the new folder">
+            <button type="submit" class="btn">Add</button>
+            <button type="button" class="btn btn-quiet" id="nxUpNewFolderCancel">Cancel</button>
+          </form>
+          <div class="nx-up-dirs" id="nxUpDirs"></div>
+        </div>
+        <div class="nx-up-note" id="nxUpDlNote" hidden></div>
+      </div>
+
+      <div class="nx-up-card" aria-labelledby="nxUpStep2">
+        <h3 id="nxUpStep2">2. Choose what to upload</h3>
+        <div class="nx-up-drop" id="nxUpDrop" tabindex="0" role="button" aria-label="Drop files or folders here, or press Enter to choose files">
+          <svg class="nx-ico nx-up-drop-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5V4.5M7.5 9L12 4.5 16.5 9M5 19.5h14"/></svg>
+          <div class="nx-up-drop-title"><span class="nx-up-drop-desk">Drop files or folders here</span><span class="nx-up-drop-phone">Choose files</span></div>
+          <div class="nx-up-drop-sub">or click to choose files. Nothing is sent until you press Upload.</div>
+        </div>
+        <div class="nx-up-pick">
+          <button type="button" class="btn btn-quiet" id="nxUpPickFiles">Choose files…</button>
+          <button type="button" class="btn btn-quiet" id="nxUpPickFolder">Choose a folder…</button>
+        </div>
+        <input type="file" id="nxUpFileInput" multiple hidden>
+        <input type="file" id="nxUpFolderInput" webkitdirectory multiple hidden>
+        <div class="nx-up-note is-error" id="nxUpSkipped" role="status" hidden></div>
+      </div>
+
+      <div class="nx-up-card" aria-labelledby="nxUpStep3">
+        <h3 id="nxUpStep3">3. Check and upload</h3>
+        <div class="nx-up-preview" id="nxUpPreview">Nothing chosen yet.</div>
+        <div class="nx-up-note is-error" id="nxUpRoom" role="alert" hidden></div>
+        <div class="nx-up-actions">
+          <button type="button" class="btn nx-up-go" id="nxUpGo" disabled>Upload</button>
+          <button type="button" class="btn btn-quiet" id="nxUpCancelAll" disabled>Cancel all</button>
+          <button type="button" class="btn btn-quiet" id="nxUpRetry" hidden>Retry failed</button>
+          <button type="button" class="btn btn-quiet" id="nxUpClear" disabled>Clear list</button>
+        </div>
+        <div class="nx-up-total" id="nxUpTotal" hidden>
+          <div class="nx-up-bar" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" id="nxUpTotalBar"><div id="nxUpTotalFill"></div></div>
+          <div class="nx-up-total-text" id="nxUpTotalText"></div>
+        </div>
+        <div class="nx-up-summary" id="nxUpSummary" role="status" hidden></div>
+        <div class="nx-up-queue" id="nxUpQueue"></div>
+        <div class="nx-up-more" id="nxUpMore" hidden><button type="button" class="btn btn-quiet" id="nxUpMoreBtn">Show more</button></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Delete forever: the only way anything is erased from the disk. data-self-managed: it closes with
+       its own buttons and Esc (js/next-trash.js) and must not get a history entry of its own. -->
+  <div class="nx-confirm" id="nxConfirm" role="alertdialog" aria-modal="true" aria-labelledby="nxConfirmTitle" aria-describedby="nxConfirmText" data-self-managed hidden>
+    <div class="nx-confirm-card">
+      <h3 id="nxConfirmTitle"></h3>
+      <p id="nxConfirmText"></p>
+      <div class="nx-confirm-status" id="nxConfirmStatus" role="status"></div>
+      <div class="nx-confirm-actions">
+        <button type="button" class="btn btn-quiet" id="nxConfirmCancel">Cancel</button>
+        <button type="button" class="btn nx-confirm-go" id="nxConfirmGo"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phone: the main rows as a bottom bar. Each button clicks the sidebar row of the same name;
+       More opens the sidebar as a sheet (css/media-next.css). -->
+  <nav class="nx-tabbar" id="nxTabbar" aria-label="Main">
+    <button type="button" class="nx-tab" data-go="people"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.6 8.4l-2 5.2-5.2 2 2-5.2z"/></svg><span>Explore</span></button>
+    <button type="button" class="nx-tab" data-go="favorites"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.3s-7.5-4.5-7.5-10.2A4.3 4.3 0 0 1 12 7.5a4.3 4.3 0 0 1 7.5 2.6c0 5.7-7.5 10.2-7.5 10.2z"/></svg><span>Favorites</span></button>
+    <button type="button" class="nx-tab" data-go="folders"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span>Folders</span></button>
+    <button type="button" class="nx-tab" data-go="recent"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></svg><span>Recent</span></button>
+    <button type="button" class="nx-tab" id="nxMoreBtn" aria-expanded="false" aria-controls="nxNav"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="18.5" cy="12" r="1.5" fill="currentColor"/></svg><span>More</span></button>
+  </nav>
+
+  <!-- Keyboard shortcuts (the ? key). -->
+  <div class="nx-help" id="nxHelp" role="dialog" aria-modal="true" aria-labelledby="nxHelpTitle" hidden>
+    <div class="nx-help-card">
+      <div class="nx-help-head"><h2 id="nxHelpTitle">Keyboard shortcuts</h2>
+        <button type="button" class="nx-icon-btn" id="nxHelpClose" aria-label="Close"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <dl class="nx-help-list">
+        <dt><kbd>/</kbd></dt><dd>Search</dd>
+        <dt><kbd>?</kbd></dt><dd>This list</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Close the viewer, a menu or this list; clear a selection</dd>
+        <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Previous or next item in the viewer</dd>
+        <dt><kbd>i</kbd></dt><dd>Show or hide the info panel</dd>
+        <dt><kbd>f</kbd></dt><dd>Favorite or unfavorite</dd>
+        <dt><kbd>Space</kbd></dt><dd>Play or pause a video or song</dd>
+        <dt><kbd>Del</kbd></dt><dd>Admin: delete the picture in the viewer, or the selected items</dd>
+        <dt><kbd>Shift</kbd> + click</dt><dd>Select a range of tiles</dd>
+      </dl>
+    </div>
+  </div>
+
+
+  <!-- data-self-managed: this modal runs its own Escape/Back/history handling
+       (see openMediaPreview / closeMediaPreview), so overlay-dismiss.js must
+       not add a second one - two controllers made it reopen on close. -->
+  <div id="mediaPreviewModal" class="modal" role="dialog" aria-modal="true" data-self-managed>
+    <div class="modal-content media-preview-content">
+      <div class="modal-header">
+        <div class="viewer-left">
+          <button type="button" class="viewer-btn viewer-back" onclick="closeMediaPreview()" aria-label="Close" title="Back (Esc)"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+          <h3 id="mediaPreviewTitle">Preview</h3>
+        </div>
+        <div class="modal-header-actions">
+          <!-- View in VR: any user, for any picture or video (converted ones open in 3D, others in 2D; media.js unhides it). -->
+          <button type="button" id="mediaVrBtn" class="info-btn convert3d-btn vr-btn" title="View in VR" hidden>VR</button>
+          <!-- 2D -> 3D conversion: admins only (media.js unhides them). -->
+          <span id="mediaConvert3dStatus" class="convert3d-status" hidden></span>
+          <button type="button" id="mediaConvert3dBtn" class="info-btn convert3d-btn" title="Convert to 3D" hidden>3D</button>
+          <!-- Its glyph is written by media.js (paintFavoriteButton); the heart itself is drawn in CSS. -->
+          <button type="button" id="mediaFavoriteBtn" class="info-btn favorite-btn viewer-btn" title="Add to favorites (f)" aria-pressed="false">&#9825;</button>
+          <button type="button" id="mediaInfoBtn" class="info-btn viewer-btn" title="File information (i)" aria-label="File information"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.2M12 7.9v.2"/></svg></button>
+          <button type="button" id="mediaMoreBtn" class="info-btn viewer-btn" title="More: share, download, copy, add to pool" aria-label="More actions" aria-haspopup="menu"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5.5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="18.5" r="1.6" fill="currentColor"/></svg></button>
+        </div>
+      </div>
+      <div id="mediaPreviewBody" class="media-preview-body"></div>
+      <button type="button" id="nxPrevBtn" class="viewer-nav viewer-prev" aria-label="Previous (left arrow)" title="Previous" hidden><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 5l-7 7 7 7"/></svg></button>
+      <button type="button" id="nxNextBtn" class="viewer-nav viewer-next" aria-label="Next (right arrow)" title="Next" hidden><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 5l7 7-7 7"/></svg></button>
+      <div id="mediaInfoPanel" class="media-info-panel" style="display:none;"></div>
+      <!-- The info panel's own header. The panel's body is rewritten by player.js, so the title and
+           the close button live beside it, not in it. -->
+      <div class="nx-info-head" id="nxInfoHead" hidden><span>Info</span>
+        <button type="button" class="viewer-btn" id="nxInfoClose" aria-label="Close info" title="Close info (i)"><svg class="nx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    </div>
+  </div>
+
+  <!-- data-self-managed: media.js already dismisses this on Escape, on a
+       click away, on scroll and on blur. Without the opt-out, overlay-dismiss
+       treats it as a dialog and gives it a history entry: showing the menu
+       pushed one and hiding it called history.back(). That popstate made the
+       media page reload its folder, re-run the search and rebuild the player,
+       so simply closing the menu restarted whatever was playing. -->
+  <div id="mediaContextMenu" class="context-menu" data-self-managed></div>
+
+  <div id="poolPickerModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-content pool-picker-content">
+      <div class="modal-header">
+        <h3>Add to Pool</h3>
+        <button type="button" class="close-btn" onclick="closePoolPicker()" aria-label="Close">&times;</button>
+      </div>
+      <div class="pool-picker-create">
+        <input type="text" id="poolPickerNewName" placeholder="New pool name...">
+        <button type="button" class="btn" id="poolPickerCreateBtn">Create &amp; Add</button>
+      </div>
+      <div id="poolPickerList" class="pool-picker-list"></div>
+    </div>
+  </div>
+
+  <div id="deleteModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-content delete-content">
+      <div class="modal-header">
+        <h3>Delete</h3>
+        <button type="button" class="close-btn" id="deleteCancelBtn" aria-label="Close">&times;</button>
+      </div>
+      <p class="delete-summary-line">About to delete <b id="deleteSummary"></b>.</p>
+      <div id="deleteFolderWarning" class="alert alert-error" style="display:none;">
+        A folder is selected — everything inside it goes too.</div>
+      <div id="deleteList" class="delete-list"></div>
+      <p class="delete-hint">Nothing is erased right away: files move to the
+        library’s trash and can be restored until it is emptied. The choice
+        below is about whether the downloader is allowed to fetch them again.</p>
+      <div class="delete-actions">
+        <button type="button" id="deleteReleaseBtn" class="btn">
+          Delete only now
+          <span>The download record is cleared, so a later run of the same
+            URL will fetch it again.</span>
+        </button>
+        <button type="button" id="deleteBanBtn" class="btn delete-ban">
+          Delete forever
+          <span>Stays blocked — the downloader will skip it from now on.</span>
+        </button>
+      </div>
+      <div id="deleteStatus" class="delete-status"></div>
+    </div>
+  </div>
+
+  <dialog id="imageSearchDialog" class="image-search-dialog" aria-labelledby="imageSearchTitle">
+    <header class="image-search-head"><div><h2 id="imageSearchTitle">Search by image</h2>
+      <p>Find related pictures by appearance, description, characters and faces.</p></div>
+      <button type="button" id="imageSearchClose" class="btn btn-quiet" aria-label="Close image search">Close</button></header>
+    <div class="image-search-query">
+      <img id="imageSearchReference" alt="Reference image" hidden>
+      <div><label class="btn btn-quiet image-search-upload" for="imageSearchFile">Choose a reference image</label>
+        <input type="file" id="imageSearchFile" accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff" class="image-search-input">
+        <p>Up to 8 MB. Or right-click a library picture and choose “Find similar images”.</p>
+        <p id="imageSearchCaption"></p></div>
+    </div>
+    <div id="imageSearchTypes" class="image-search-types" role="group" aria-label="Match type">
+      <button type="button" class="btn btn-quiet" data-match="all" aria-pressed="true">All</button>
+      <button type="button" class="btn btn-quiet" data-match="visual" aria-pressed="false">Visual</button>
+      <button type="button" class="btn btn-quiet" data-match="description" aria-pressed="false">Descriptions</button>
+      <button type="button" class="btn btn-quiet" data-match="characters" aria-pressed="false">Characters</button>
+      <button type="button" class="btn btn-quiet" data-match="faces" aria-pressed="false">Faces</button>
+    </div>
+    <p id="imageSearchStatus" role="status" aria-live="polite">Choose a picture to start.</p>
+    <p id="imageSearchWarning" class="image-search-warning"></p>
+    <div id="imageSearchGrid" class="media-grid media-gallery"></div>
+    <button type="button" id="imageSearchMore" class="btn btn-quiet" hidden>Show more matches</button>
+  </dialog>
+
+  <div id="selectToast" class="select-toast" style="display:none;"></div>
+
+  <script src="/js/overlay-dismiss.js"></script>
+  <script src="/js/player.js"></script>
+  <script src="/js/upscale.js"></script>
+  <script src="/js/interp.js"></script>
+  <script src="/js/gallery.js"></script>
+  <script src="/js/listen_time.js"></script>
+  <script src="/js/stereo3d.js"></script>
+  <!--FILTER_OPTIONS-->
+  <script src="/js/discovery-grid.js"></script>
+  <script src="/js/media.js"></script>
+  <script src="/js/next-select.js?v=4"></script>
+  <script src="/js/image-search.js"></script>
+  <script src="/js/next-trash.js?v=3"></script>
+  <script src="/js/next-timeline.js?v=1"></script>
+  <script src="/js/next-explore.js?v=3"></script>
+  <script src="/js/vendor/leaflet.js?v=1"></script>
+  <script src="/js/next-map.js?v=1"></script>
+  <script src="/js/next-upload.js?v=1"></script>
+  <script src="/js/next-account.js?v=1"></script>
+  <script src="/js/next-shell.js?v=13"></script>
+  <script src="/js/atrihord-user.js" defer></script>
+</body>
+</html>

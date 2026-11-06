@@ -1,0 +1,1843 @@
+/* The music page (music.html). Tokens from atrihord.css only. */
+
+body.music-app {
+  margin: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-rows: 60px minmax(0, 1fr) auto;
+  grid-template-areas: "top top" "side main" "player player";
+  overflow: hidden;
+  background: var(--page);
+}
+
+/* ---- top bar ---------------------------------------------------------- */
+.mu-top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--page);
+  min-width: 0;
+}
+.mu-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink) !important;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  text-decoration: none !important;
+  white-space: nowrap;
+}
+.mu-brand-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-grid;
+  place-items: center;
+}
+.mu-brand-mark::after {
+  content: "";
+  border-left: 9px solid var(--page);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  margin-left: 3px;
+}
+.mu-search {
+  flex: 1 1 auto;
+  max-width: 560px;
+  position: relative;
+  margin: 0 auto;
+}
+.mu-search input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 0 var(--sp-3) 0 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-md);
+}
+.mu-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.mu-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.mu-top-end {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  white-space: nowrap;
+}
+.mu-top-link {
+  font-size: var(--text-sm);
+  color: var(--muted) !important;
+}
+.mu-menu-btn {
+  display: none;
+}
+/* The surround output the page found, and the height-channel switch. */
+.mu-surround {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+.mu-heights {
+  padding: 4px var(--sp-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.mu-heights[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+.mu-heights:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- side rail ---------------------------------------------------------- */
+.mu-side {
+  grid-area: side;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-2);
+  border-right: 1px solid var(--line);
+  background: var(--page);
+}
+.mu-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 10px var(--sp-3);
+  border-radius: var(--r-sm);
+  color: var(--ink-2) !important;
+  text-decoration: none !important;
+  font-weight: 500;
+}
+.mu-nav:hover {
+  background: var(--wash);
+  color: var(--ink) !important;
+}
+.mu-nav[aria-current="page"] {
+  background: var(--surface-2);
+  color: var(--ink) !important;
+}
+.mu-nav-icon, .mu-new-pl [data-icon] {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+}
+.mu-side-sep {
+  height: 1px;
+  background: var(--line);
+  margin: var(--sp-3) var(--sp-2);
+}
+.mu-new-pl {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: calc(100% - var(--sp-2) * 2);
+  margin: 0 var(--sp-2) var(--sp-3);
+  padding: 8px var(--sp-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.mu-new-pl:hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.mu-side-title {
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mu-side-setting {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--sp-3);
+}
+.mu-side-setting select {
+  margin: 0 var(--sp-3);
+  padding: 6px var(--sp-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.mu-side-list {
+  list-style: none;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+}
+.mu-side-list a {
+  display: block;
+  padding: 6px var(--sp-3);
+  border-radius: var(--r-sm);
+  color: var(--ink-2) !important;
+  text-decoration: none !important;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-side-list a:hover {
+  background: var(--wash);
+  color: var(--ink) !important;
+}
+.mu-side-list a[aria-current="page"] {
+  color: var(--ink) !important;
+  background: var(--surface-2);
+}
+.mu-side-list .mu-side-sub {
+  display: block;
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
+.mu-side-empty {
+  padding: 4px var(--sp-3);
+  color: var(--faint);
+  font-size: var(--text-sm);
+}
+
+/* ---- main --------------------------------------------------------------- */
+.mu-main {
+  grid-area: main;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-5) var(--sp-6) var(--sp-6);
+  min-width: 0;
+  outline: none;
+}
+.mu-loading, .mu-empty {
+  color: var(--muted);
+  padding: var(--sp-6) 0;
+  text-align: center;
+}
+.mu-h1 {
+  font-size: var(--text-xl);
+  margin: 0 0 var(--sp-4);
+}
+.mu-h2 {
+  font-size: var(--text-lg);
+  margin: 0;
+}
+
+/* Shelves: a titled row of cards that scrolls sideways. */
+.mu-shelf {
+  margin-bottom: var(--sp-6);
+}
+.mu-shelf-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.mu-shelf-head .mu-more-link {
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+.mu-shelf-arrows {
+  display: flex;
+  gap: var(--sp-1);
+}
+.mu-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 210px;
+  gap: var(--sp-4);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: var(--sp-2);
+  scrollbar-width: thin;
+}
+.mu-row > * {
+  scroll-snap-align: start;
+}
+/* Scroll bars show only while the pointer is over the box they scroll.
+   Only the colour goes - the bar keeps its room, so nothing moves on hover.
+   The shelves draw the standard bar (scrollbar-width switches Chrome off
+   ::-webkit-scrollbar); the other boxes draw atrihord.css's webkit bar. */
+.mu-row {
+  scrollbar-color: transparent transparent;
+}
+.mu-row:hover {
+  scrollbar-color: var(--faint) transparent;
+}
+.ah .mu-side:not(:hover)::-webkit-scrollbar-thumb,
+.ah .mu-main:not(:hover)::-webkit-scrollbar-thumb,
+.ah .mu-row:not(:hover)::-webkit-scrollbar-thumb,
+.ah .mu-queue-list:not(:hover)::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.mu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--sp-5) var(--sp-4);
+}
+
+/* Cards: a cover (or a 2x2 mosaic), a title, a line under it. */
+.mu-card {
+  display: block;
+  min-width: 0;
+  color: var(--ink) !important;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+/* No colour of its own behind a cover. A picture that fills a box with
+   rounded corners is clipped by that radius, and the browser rasterises the
+   clip and the box's own background separately: where the two anti-aliased
+   curves disagree - a fraction of a pixel - the background shows through as a
+   bright arc along every corner, and on a dark cover that arc is all anyone
+   sees (user, 2026-09-23: "Around the rounded corners of song covers is a
+   bright edge"). Nothing bright behind it, nothing to show through: a cover
+   that has not arrived leaves the page's own colour, and a song with no cover
+   gets .mu-ph, which brings its own surface. */
+.mu-card-art {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.mu-card.round .mu-card-art {
+  border-radius: 50%;
+}
+.mu-card-art img, .mu-mosaic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mu-mosaic {
+  display: grid;
+  /* minmax(0, 1fr), not 1fr: a 1fr track is at least as tall as its content,
+     and a cover's own height is far more than a quarter of the box - so the
+     four of them overflowed and the bottom row was cut in half. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+}
+.mu-card-play {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: var(--page);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+  cursor: pointer;
+  box-shadow: var(--shadow-pop);
+}
+.mu-card:hover .mu-card-play, .mu-card:focus-within .mu-card-play {
+  opacity: 1;
+  transform: none;
+}
+.mu-card-play svg {
+  width: 18px;
+  height: 18px;
+}
+/* A round card has no corner for the button to sit in: in the bottom right it
+   hangs over the edge of the circle and lands on whoever is in the picture.
+   On artists it goes in the middle instead, over a scrim that lets the icon
+   read against a bright cover (user, 2026-09-22). */
+.mu-card.round .mu-card-play {
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  z-index: 1;
+}
+.mu-card.round .mu-card-play svg {
+  width: 20px;
+  height: 20px;
+}
+.mu-card.round .mu-card-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.38);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+  pointer-events: none;
+}
+.mu-card.round:hover .mu-card-art::after,
+.mu-card.round:focus-within .mu-card-art::after {
+  opacity: 1;
+}
+.mu-card-title {
+  margin-top: var(--sp-2);
+  font-weight: 500;
+  font-size: var(--text-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-card-sub {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-card.round .mu-card-title, .mu-card.round .mu-card-sub {
+  text-align: center;
+}
+
+/* A placeholder cover: the first letter on a tinted square. */
+.mu-ph {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 2.2rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  user-select: none;
+}
+.mu-ph.small {
+  font-size: var(--text-md);
+}
+
+/* ---- the page header of a playlist / album / artist -------------------- */
+.mu-hero {
+  display: flex;
+  gap: var(--sp-5);
+  align-items: flex-end;
+  margin-bottom: var(--sp-5);
+}
+.mu-hero-art {
+  width: 208px;
+  height: 208px;
+  flex: none;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+/* The picture fills the box, as a card's does: no band down the side of a
+   cover that is not square, and a round one is not letterboxed into a circle. */
+.mu-hero-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mu-hero-art.round {
+  border-radius: 50%;
+}
+.mu-hero-kind {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mu-hero-title {
+  font-size: var(--text-display);
+  line-height: 1.1;
+  margin: var(--sp-1) 0 var(--sp-2);
+  word-break: break-word;
+}
+.mu-hero-sub {
+  color: var(--ink-2);
+  font-size: var(--text-md);
+}
+.mu-hero-sub a {
+  color: var(--ink) !important;
+}
+.mu-hero-meta {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  margin-top: var(--sp-1);
+}
+.mu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  align-items: center;
+}
+.mu-primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--page) !important;
+}
+.mu-primary:hover {
+  background: var(--accent-hover) !important;
+}
+.mu-actions .ah-btn {
+  gap: var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+}
+.mu-sync-state {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* ---- track lists ---------------------------------------------------------- */
+.mu-tracks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* Row height, cover and type are a step up from the rest of the page (user,
+   2026-09-22: "increase the size of songs displayed like this by at least
+   10%"): a track list is what this page is read from, and the estate's body
+   size is small for a list of a hundred songs seen from a metre away. */
+.mu-track {
+  display: grid;
+  grid-template-columns: 40px 48px minmax(0, 2fr) minmax(0, 1.2fr) 64px 40px;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 9px var(--sp-2);
+  border-radius: var(--r-sm);
+  cursor: default;
+}
+.mu-track:hover, .mu-track:focus-within {
+  background: var(--wash);
+}
+.mu-track.playing .mu-track-title {
+  color: var(--accent);
+}
+.mu-track-num {
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-base);
+  position: relative;
+}
+.mu-track-num .mu-track-play {
+  display: none;
+}
+.mu-track:hover .mu-track-num .mu-n, .mu-track:focus-within .mu-track-num .mu-n {
+  display: none;
+}
+.mu-track:hover .mu-track-num .mu-track-play, .mu-track:focus-within .mu-track-num .mu-track-play {
+  display: inline-grid;
+}
+.mu-track-play {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+.mu-track-play svg {
+  width: 18px;
+  height: 18px;
+}
+.mu-track-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-xs);
+  overflow: hidden;
+}
+.mu-track-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mu-track-main {
+  min-width: 0;
+}
+.mu-track-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  font-size: var(--text-md);
+}
+.mu-track-artist, .mu-track-album {
+  color: var(--muted);
+  font-size: var(--text-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-track-artist a, .mu-track-album a {
+  color: inherit !important;
+}
+.mu-track-artist a:hover, .mu-track-album a:hover {
+  color: var(--ink) !important;
+}
+.mu-track-dur {
+  color: var(--muted);
+  font-size: var(--text-base);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mu-track-more {
+  opacity: 0;
+}
+.mu-track:hover .mu-track-more, .mu-track:focus-within .mu-track-more, .mu-track-more[aria-expanded="true"] {
+  opacity: 1;
+}
+.mu-list-foot {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding: var(--sp-3) var(--sp-2);
+}
+
+/* ---- buttons ----------------------------------------------------------- */
+.mu-icon-btn {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+.mu-icon-btn:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+.mu-icon-btn[aria-pressed="true"] {
+  color: var(--accent);
+}
+.mu-icon-btn svg, [data-icon] > svg {
+  width: 20px;
+  height: 20px;
+}
+.mu-text-btn {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.mu-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-5);
+  flex-wrap: wrap;
+}
+.mu-tabs a {
+  padding: 6px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  color: var(--ink-2) !important;
+  text-decoration: none !important;
+  font-size: var(--text-sm);
+}
+.mu-tabs a:hover {
+  border-color: var(--accent);
+}
+.mu-tabs a[aria-current="page"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--page) !important;
+}
+.mu-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.mu-chips a {
+  padding: 8px 14px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink) !important;
+  text-decoration: none !important;
+  font-size: var(--text-sm);
+  border-left: 3px solid var(--accent);
+}
+.mu-chips a:hover {
+  background: var(--surface-hover);
+}
+
+/* ---- search results ---------------------------------------------------- */
+.mu-top-result {
+  color: var(--ink) !important;
+  text-decoration: none !important;
+  display: flex;
+  gap: var(--sp-4);
+  align-items: center;
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  margin-bottom: var(--sp-5);
+  max-width: 640px;
+}
+.mu-top-result .mu-hero-art {
+  width: 96px;
+  height: 96px;
+}
+.mu-top-result-title {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+/* ---- the player bar ------------------------------------------------------ */
+/* Above the now-playing screen (.mu-stage, 25) and the queue (.mu-queue, 20):
+   both end exactly where the bar begins, and the seek line sits ON that edge -
+   half of it above the bar. Without a level of its own the bar painted under
+   them, so the upper half of the knob was cut off and the upper half of the
+   seek line took no clicks (user, 2026-09-23). Still under the phone's side
+   drawer (30), the menus (40) and the toast (50). */
+.mu-player {
+  grid-area: player;
+  position: relative;
+  z-index: 26;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.mu-player-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(0, 1.4fr) minmax(200px, 1fr);
+  align-items: center;
+  gap: var(--sp-4);
+  height: 72px;
+  padding: 0 var(--sp-4);
+}
+/* The input is the hit area: 20px, centred on the bar's top edge, around a
+   3px line (was 14px - "increase the hitbox a slight bit"). */
+.mu-seek {
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  --pct: 0%;
+}
+.mu-seek::-webkit-slider-runnable-track {
+  height: 3px;
+  background: linear-gradient(to right, var(--accent) var(--pct), var(--line-strong) var(--pct));
+}
+.mu-seek::-moz-range-track {
+  height: 3px;
+  background: linear-gradient(to right, var(--accent) var(--pct), var(--line-strong) var(--pct));
+}
+.mu-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+}
+.mu-seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+}
+.mu-player:hover .mu-seek::-webkit-slider-thumb, .mu-seek:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+.mu-player:hover .mu-seek::-moz-range-thumb, .mu-seek:focus-visible::-moz-range-thumb {
+  opacity: 1;
+}
+/* Never a box around the sliders (user, 2026-09-24: "It should not be
+   possible to highlight the progress bar in fullscreen mode or otherwise").
+   A click leaves the focus on the bar, and the next key - J, K, L, an arrow,
+   the one that shows the fullscreen chrome - makes the browser count it as
+   keyboard focus and draw atrihord.css's ring round the whole 20px hit area. The
+   thumb, shown on :focus-visible above, is the keyboard's sign instead. No
+   tap flash on a phone either. */
+.ah .mu-seek:focus, .ah .mu-seek:focus-visible,
+.ah .mu-volume:focus, .ah .mu-volume:focus-visible {
+  outline: none;
+}
+.mu-seek, .mu-volume {
+  -webkit-tap-highlight-color: transparent;
+}
+.mu-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mu-play-btn {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--page);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+.mu-play-btn:hover {
+  background: var(--ink-2);
+}
+.mu-play-btn svg {
+  width: 22px;
+  height: 22px;
+}
+.mu-time {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  margin-left: var(--sp-2);
+  white-space: nowrap;
+}
+.mu-now {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  justify-content: center;
+}
+.mu-now-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-xs);
+  object-fit: cover;
+  background: var(--surface-2);
+  flex: none;
+}
+.mu-now-text {
+  min-width: 0;
+}
+.mu-now-title {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-now-sub {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-now-sub a {
+  color: inherit !important;
+}
+.mu-extras {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+}
+.mu-volume {
+  width: 96px;
+  accent-color: var(--accent);
+}
+
+/* ---- queue drawer ---------------------------------------------------------- */
+.mu-queue {
+  position: fixed;
+  right: 0;
+  top: 60px;
+  bottom: 73px;
+  width: min(380px, 100vw);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+.mu-queue[hidden] {
+  display: none;
+}
+.mu-queue-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+.mu-queue-head h2 {
+  font-size: var(--text-md);
+  margin: 0 auto 0 0;
+}
+.mu-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2);
+  overflow-y: auto;
+  flex: 1;
+}
+.mu-queue-list li {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 32px;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.mu-queue-list li:hover {
+  background: var(--wash);
+}
+.mu-queue-list li.current {
+  background: var(--surface-2);
+}
+.mu-queue-list li.current .mu-track-title {
+  color: var(--accent);
+}
+.mu-queue-list li.mu-q-label {
+  display: block;                /* a label row, not a song row's three columns */
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: var(--sp-3) var(--sp-2) var(--sp-1);
+  cursor: default;
+}
+.mu-queue-list .mu-q-label:hover {
+  background: none;
+}
+/* Autoplay's next songs, not queued yet: there, but quieter. */
+.mu-queue-list li.mu-q-auto {
+  opacity: 0.6;
+}
+.mu-queue-list li.mu-q-auto:hover {
+  opacity: 1;
+}
+.mu-queue-sub {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-queue-sub:empty {
+  display: none;
+}
+.mu-queue-head h2 {
+  min-width: 0;
+}
+.mu-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mu-switch input {
+  appearance: none;
+  width: 30px;
+  height: 18px;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--line-strong);
+  position: relative;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.mu-switch input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--page);
+  transition: transform var(--dur) var(--ease);
+}
+.mu-switch input:checked {
+  background: var(--accent);
+}
+.mu-switch input:checked::after {
+  transform: translateX(12px);
+}
+.mu-switch input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- the now-playing screen ---------------------------------------------- */
+/* The cover's colour behind it. music.js and music_share.js (ambientFrom)
+   publish only its hue and lifted saturation; the LIGHTNESS is the theme's.
+   It used to be pinned at 12% for both, so in light mode a near-black colour
+   stood between a white queue and a white player bar and swallowed the dark
+   icons (user, 2026-09-24: "suboptimal in light mode ... bad for my eyes").
+   Light mode gets a pale wash of the same hue instead; dark is unchanged.
+   Without a cover the -h/-s pair is unset, --mu-ambient is invalid and the
+   screen falls back to --page.
+   --mu-fs-fade-top / -bottom are what the fullscreen bars sit on: a fade out
+   of black on dark, NOTHING on light - a fade out of the light page colour
+   read as "a white glow from the bottom and top" over the artwork (user,
+   2026-09-24: "Remove that").
+   Tokens only, in the same two light blocks atrihord.css keeps. */
+:root {
+  --mu-ambient: hsl(var(--mu-ambient-h) var(--mu-ambient-s) 12%);
+  --mu-fs-fade-top: linear-gradient(to bottom, rgb(0 0 0 / 0.55), transparent);
+  --mu-fs-fade-bottom: linear-gradient(to top, rgb(0 0 0 / 0.75), transparent);
+}
+:root[data-theme="light"] {
+  --mu-ambient: hsl(var(--mu-ambient-h) calc(var(--mu-ambient-s) * 0.45) 90%);
+  --mu-fs-fade-top: none;
+  --mu-fs-fade-bottom: none;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] {
+    --mu-ambient: hsl(var(--mu-ambient-h) calc(var(--mu-ambient-s) * 0.45) 90%);
+    --mu-fs-fade-top: none;
+    --mu-fs-fade-bottom: none;
+  }
+}
+
+/* The bottom bar expanded over the page: the cover as large as it fits with
+   the song under it, and what comes next beside it. It stops above the player
+   bar, which keeps the transport - one set of controls, wherever you are. */
+.mu-stage {
+  position: fixed;
+  inset: 0 0 73px 0;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 26rem);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "bar queue" "now queue";
+  gap: var(--sp-3) var(--sp-5);
+  padding: var(--sp-3) var(--sp-5) var(--sp-5);
+  /* One solid colour taken from the cover (music.js, ambientFrom), the way
+     media-dl's preview tints itself: the artwork's own colour behind the
+     whole screen instead of the same flat grey for every song. */
+  background: var(--mu-ambient, var(--page));
+  transition: background-color 0.35s ease;
+  /* clip, not hidden: the blurred backdrop below reaches past every edge, and
+     a box that CAN scroll gets scrolled - one focused row in the queue had
+     the browser shift the whole screen sideways to "reveal" it. */
+  overflow: hidden;
+  overflow: clip;
+  isolation: isolate;
+}
+.mu-stage[hidden] {
+  display: none;
+}
+.mu-stage-bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mu-stage-chips {
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+/* The chip js/upscale.js puts there - the library styles it in main.css,
+   which this page does not load. */
+.upscale-chip {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.upscale-chip:hover {
+  background: var(--accent-wash);
+}
+.upscale-chip[aria-pressed="false"] {
+  color: var(--muted);
+  border-color: var(--line-strong);
+}
+.mu-stage-now {
+  grid-area: now;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  min-height: 0;
+  min-width: 0;
+}
+.mu-stage-art {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  /* Measured, so the square below can take the smaller of the two sides:
+     clamping a box with an aspect ratio only ever shrinks one of them. */
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* The box the cover is drawn in: the biggest one with the COVER'S OWN shape
+   that still fits the room. A square box would letterbox everything that is
+   not square - a cover taken from the video is 16:9 - and those bars were
+   the first thing anyone noticed. The ratio comes from the picture
+   (music.js sets --cover-ar), the SIZE never does: the upscaled copy has
+   several times as many pixels and a box sized by them would jump the
+   moment that copy is swapped in. */
+.mu-stage-fit {
+  --cover-ar: 1;
+  height: min(100%, 68vh);                /* without container queries */
+  height: min(100cqh, calc(100cqw / var(--cover-ar)), 68vh);
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: var(--cover-ar);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  /* The cover, the video and the placeholder are in the same box and only
+     one of them is on screen: they are stacked, not laid out one after the
+     other - a video below a cover would sit a screen further down. */
+  position: relative;
+}
+.mu-stage-cover, .mu-stage-video, .mu-stage-ph {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.mu-stage-cover[hidden], .mu-stage-video[hidden] {
+  display: none;
+}
+.mu-stage-ph {
+  color: var(--faint);
+  font-size: var(--text-display);
+  display: grid;
+  place-items: center;
+}
+.mu-stage-ph[hidden] {
+  display: none;
+}
+/* Song or Video, the pill YouTube Music puts above the artwork. Nothing else
+   stands there: what is playing is written in the bar below. */
+.mu-stage-modes {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.mu-stage-modes[hidden] {
+  display: none;
+}
+.mu-mode {
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 0.35rem 1.1rem;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  background: transparent;
+  cursor: pointer;
+}
+.mu-mode:hover {
+  color: var(--ink);
+}
+.mu-mode[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+}
+/* Details, behind the ⓘ button: what is being done to what you are seeing or
+   hearing - the upscale, Smooth motion - above the file's own facts. The same
+   shape as media-dl's info panel, and like it, only there when asked for. */
+.mu-info-panel {
+  position: absolute;
+  top: calc(var(--sp-3) + 2.6rem);
+  right: var(--sp-5);
+  z-index: 6;
+  width: min(24rem, calc(100% - var(--sp-5) * 2));
+  max-height: min(60vh, 34rem);
+  overflow-y: auto;
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+.mu-info-panel[hidden] {
+  display: none;
+}
+.mu-info-block + .mu-info-block {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line);
+}
+.mu-info-h {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  margin-bottom: var(--sp-2);
+}
+.mu-info-note {
+  margin: 0 0 var(--sp-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.mu-info-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.9rem;
+  margin: 0;
+}
+.mu-info-list dt {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mu-info-list dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+/* js/interp.js builds its settings menu out of these classes; the library
+   gets them from css/main.css, which this page does not load. Same shape,
+   this page's tokens. */
+.player-settings-menu {
+  position: absolute;
+  top: calc(var(--sp-3) + 2.6rem);
+  right: var(--sp-5);
+  z-index: 6;
+  width: min(22rem, calc(100% - var(--sp-5) * 2));
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--text-sm);
+}
+.player-settings-menu[hidden] {
+  display: none;
+}
+.player-settings-label {
+  font-weight: 600;
+  margin: 0 0 var(--sp-2);
+}
+.player-settings-label:not(:first-child) {
+  margin-top: var(--sp-4);
+}
+.player-settings-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.player-settings-choice button {
+  flex: 1 0 auto;
+  min-width: 2.6rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.player-settings-choice button:hover {
+  border-color: var(--accent);
+}
+.player-settings-choice button.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--page);
+}
+.player-settings-note {
+  margin-top: var(--sp-2);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+.mu-stage-queue {
+  grid-area: queue;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+/* The drawer would sit on top of the screen, which shows the queue itself. */
+body.mu-stage-open #muQueueBtn {
+  display: none;
+}
+/* Fullscreen, borrowed from media-dl's own player: the artwork owns the
+   screen. It fills the viewport on the cover's solid colour, and everything
+   else - the top row, the title, the queue, the transport - floats over it
+   and steps aside once the mouse has been still (body.mu-chrome, music.js).
+   A cover shaped like the screen therefore reaches every edge. */
+body.mu-fs {
+  grid-template-columns: 0 minmax(0, 1fr);
+  grid-template-rows: 0 minmax(0, 1fr) auto;
+}
+body.mu-fs .mu-top, body.mu-fs .mu-side {
+  display: none;
+}
+body.mu-fs .mu-stage {
+  inset: 0;
+  padding: 0;
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "now";
+}
+body.mu-fs .mu-stage-now {
+  position: absolute;
+  inset: 0;
+  gap: 0;
+}
+body.mu-fs .mu-stage-art {
+  width: 100%;
+  height: 100%;
+}
+/* width AND height, not max-*: max-* only ever shrinks, so the cover would
+   stay at its own size instead of growing to the screen (main.css says the
+   same about the preview). object-fit keeps its shape; what is left over is
+   the ambient colour, not a grey box. */
+body.mu-fs .mu-stage-fit {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+body.mu-fs .mu-stage-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--mu-fs-fade-top);
+}
+body.mu-fs .mu-stage-modes {
+  position: absolute;
+  top: calc(var(--sp-5) + 2.2rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+body.mu-fs .player-settings-menu,
+body.mu-fs .mu-info-panel {
+  top: calc(var(--sp-3) + 2.6rem);
+  right: var(--sp-5);
+}
+/* Not in fullscreen: what is coming next belongs to the windowed screen (user,
+   2026-09-23). Nothing stands beside the artwork there. */
+body.mu-fs .mu-stage-queue {
+  display: none;
+}
+body.mu-fs .mu-player {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  border-top: 0;
+  background: var(--mu-fs-fade-bottom);
+}
+/* Out of the way while nothing is being done, exactly as the preview's header
+   is. Keyboard focus counts as being used, or tabbing to a control would
+   fade it out under the viewer. */
+body.mu-fs .mu-stage-bar,
+body.mu-fs .mu-stage-modes,
+body.mu-fs .mu-player {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+body.mu-fs.mu-chrome .mu-stage-bar,
+body.mu-fs.mu-chrome .mu-stage-modes,
+body.mu-fs.mu-chrome .mu-player {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Keyboard focus does NOT hold the chrome up. It used to (:has(:focus-visible)
+   on these three), and pressing Next with the keyboard then left the bar on
+   screen for good: the button it had pressed kept the focus ring, and nothing
+   ever takes it away (user, 2026-09-23). Every key press shows the chrome for
+   CHROME_HIDE_MS instead, which is the feedback a keyboard needs; a control
+   that has faded out can still be tabbed to and pressed, opacity does not
+   take that away. */
+
+/* The mouse pointer goes with the chrome, or it is the one thing left on an
+   otherwise empty picture (user, 2026-09-23); the first movement brings both
+   back. Also on every child, because a cursor is inherited and several of
+   them set one of their own. */
+body.mu-fs:not(.mu-chrome),
+body.mu-fs:not(.mu-chrome) * {
+  cursor: none;
+}
+
+/* ---- history ----------------------------------------------------------------- */
+/* Plays, newest first: the time stands where a track list has its number, and
+   what the song was played from where a track list has the album. */
+.mu-hist .mu-track {
+  grid-template-columns: 58px 48px minmax(0, 2fr) minmax(0, 1.2fr) 64px 40px;
+}
+.mu-day {
+  color: var(--ink-2);
+  font-weight: 600;
+  font-size: var(--text-md);
+  padding: var(--sp-5) var(--sp-2) var(--sp-1);
+}
+.mu-day:first-child {
+  padding-top: 0;
+}
+.mu-from {
+  color: var(--faint);
+}
+
+/* ---- radios ------------------------------------------------------------------ */
+.mu-radio-art {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.mu-radio-badge {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--page);
+  box-shadow: var(--shadow-pop);
+}
+.mu-radio-badge svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* ---- menus, toast, dialog --------------------------------------------------- */
+.mu-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: var(--sp-1);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+}
+.mu-menu[hidden] {
+  display: none;
+}
+/* An entry is an icon and its text, as in YouTube Music's menus: the icons in
+   one column, the text lined up after them, cut with an ellipsis if long. */
+.mu-menu button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 9px var(--sp-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.mu-menu button svg, .mu-menu .mu-menu-noicon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.mu-menu .mu-menu-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-menu button:hover, .mu-menu button:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+.mu-menu .mu-menu-sep {
+  height: 1px;
+  background: var(--line-strong);
+  margin: var(--sp-1) 0;
+}
+.mu-menu .mu-menu-label {
+  padding: 6px var(--sp-3) 2px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.mu-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 10px 18px;
+  border-radius: var(--r-md);
+  background: var(--ink);
+  color: var(--page);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-pop);
+  max-width: calc(100vw - 32px);
+}
+.mu-toast[hidden] {
+  display: none;
+}
+.mu-dialog {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--ink);
+  padding: var(--sp-5);
+  width: min(440px, calc(100vw - 32px));
+  box-shadow: var(--shadow-pop);
+}
+.mu-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.mu-dialog h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-lg);
+}
+.mu-dialog-text {
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--sp-3);
+}
+.mu-dialog-text:empty {
+  display: none;
+}
+.mu-dialog input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.mu-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+/* the delete-song dialog: every name of the file, then an explicit confirm box */
+.mu-delete-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+.mu-delete-copies {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  list-style: none;
+  max-height: 40vh;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md, 6px);
+  font-size: var(--text-sm);
+  word-break: break-all;
+}
+.mu-delete-copies li + li {
+  margin-top: var(--sp-1, 4px);
+}
+.mu-delete-root {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.mu-delete-warn {
+  color: var(--down);
+}
+.mu-delete-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  font-size: var(--text-sm);
+}
+.mu-delete-dialog .mu-delete-check input {
+  width: auto;
+}
+.mu-delete-dialog .ah-btn.danger:not(:disabled) {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+
+/* ---- narrow screens ---------------------------------------------------------- */
+@media (max-width: 900px) {
+  body.music-app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "top" "main" "player";
+  }
+  .mu-menu-btn {
+    display: inline-grid;
+  }
+  .mu-side {
+    position: fixed;
+    top: 60px;
+    bottom: 0;
+    left: 0;
+    width: 260px;
+    z-index: 30;
+    transform: translateX(-100%);
+    transition: transform var(--dur) var(--ease);
+    box-shadow: var(--shadow-pop);
+  }
+  .mu-side.open {
+    transform: none;
+  }
+  .mu-top-link, .mu-brand {
+    display: none;
+  }
+  .mu-main {
+    padding: var(--sp-4);
+  }
+  .mu-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .mu-hero-art {
+    width: 160px;
+    height: 160px;
+  }
+  .mu-hero-title {
+    font-size: var(--text-xl);
+  }
+  .mu-track {
+    grid-template-columns: 48px minmax(0, 1fr) 48px 36px;
+  }
+  .mu-track-num, .mu-track-album {
+    display: none;
+  }
+  .mu-player-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    height: 64px;
+    gap: var(--sp-2);
+  }
+  .mu-now {
+    order: -1;
+    justify-content: flex-start;
+  }
+  .mu-extras, .mu-time, #muPrev {
+    display: none;
+  }
+  .mu-row {
+    grid-auto-columns: 170px;
+  }
+  .mu-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+  .mu-queue {
+    top: 60px;
+    bottom: 65px;
+  }
+  .mu-stage {
+    inset: 0 0 65px 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "bar" "now" "queue";
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  }
+  .mu-stage-queue {
+    max-height: 38vh;
+  }
+  .mu-hist .mu-track {
+    grid-template-columns: 52px 48px minmax(0, 1fr) 48px 36px;
+  }
+  .mu-hist .mu-track-num {
+    display: block;
+  }
+}
+
+/* Touch screens have no hover: what hover reveals must simply be there. */
+@media (hover: none) {
+  .mu-track-more, .mu-card-play {
+    opacity: 1;
+    transform: none;
+  }
+  .mu-card.round .mu-card-art::after {
+    opacity: 0;
+  }
+  .mu-track {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mu-card-play, .mu-side, .mu-card-art::after {
+    transition: none;
+  }
+}
+
+/* ---- a shared link ------------------------------------------------------ */
+/* What /share/<token> opens for a music link (music_share.html,
+   js/music_share.js). The page IS this page with the library taken out - no
+   sidebar, no search, nobody signed in - so it keeps the same grid, hero,
+   track rows, player bar and now-playing screen, and only closes the column
+   the sidebar held. What follows is the handful of things that have no
+   counterpart here. */
+body.music-share {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "top" "main" "player";
+}
+.ms-shared {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+/* The last cell of a row is a download here, not a ⋯ menu: it is the one
+   thing a visitor can do with a song besides play it, so unlike
+   .mu-track-more it does not wait to be hovered over. */
+/* A download is a link drawn as an icon button, and atrihord.css colours every
+   link - more specifically than one class - so it came out in the accent
+   blue. The same !important the page's own links use (.mu-brand). */
+a.mu-icon-btn {
+  color: var(--ink-2) !important;
+  text-decoration: none !important;
+}
+a.mu-icon-btn:hover, a.mu-icon-btn:focus-visible {
+  color: var(--ink) !important;
+}
+a.ms-dl {
+  color: var(--muted) !important;
+}
+a.ms-dl:hover, a.ms-dl:focus-visible {
+  color: var(--ink) !important;
+}
+.ms-expiry {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.ms-empty {
+  max-width: 32rem;
+  margin: 14vh auto;
+  text-align: center;
+  color: var(--muted);
+}
+.ms-empty h1 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-xl);
+  color: var(--ink);
+}
+/* A link to ONE song is shown the way a song is seen while it plays: the
+   now-playing screen, and nothing beside the cover to come next. */
+.mu-stage.ms-solo {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "bar" "now";
+}
+.mu-stage.ms-solo .mu-stage-queue {
+  display: none;
+}
+@media (max-width: 900px) {
+  /* Nothing here needs the room: no menu button, no search. */
+  body.music-share .mu-brand {
+    display: inline-flex;
+  }
+  /* The bar keeps what the page's keeps on a phone. */
+  #msPrev {
+    display: none;
+  }
+}
+
+/* ---- speaker activity (right-click on the playing song's cover) --------------------------- */
+.mu-spk {
+  position: fixed;
+  right: 16px;
+  bottom: 104px;
+  z-index: 40;
+  width: 320px;
+  padding: var(--sp-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg, 12px);
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+.mu-spk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.mu-spk-canvas {
+  display: block;
+  width: 100%;
+  height: 290px;
+}
+.mu-spk-info {
+  margin-top: var(--sp-2);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+@media (max-width: 720px) {
+  .mu-spk { right: 8px; left: 8px; width: auto; bottom: 92px; }
+}
+
+.mu-top-link[hidden] { display: none; }

@@ -1,0 +1,50 @@
+/* AtriHord's own file (see the note at the top of atrihord.css): not synced with the estate's Stylehub. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   ATRIHORD — compatibility shim for the legacy main.css
+   ═══════════════════════════════════════════════════════════════════════════
+
+   main.css is ~1500 lines written against its own Tailwind-slate
+   variable names. Rather than rewrite it, this file re-points those legacy
+   names at the canonical atrihord.css tokens, so the whole app adopts the design
+   language in one edit and keeps working.
+
+   Load order in each template:
+       <link rel="stylesheet" href="/css/atrihord.css" />
+       <link rel="stylesheet" href="/css/atrihord-compat.css" />
+       <link rel="stylesheet" href="/css/main.css" />
+
+   …then delete the :root block at the top of main.css so it stops overriding
+   these. Migrate rules to the --token names as you touch them; when main.css
+   no longer mentions any legacy name, delete this file.
+
+   What visibly changes: the slate-blue page (#0f172a) becomes the warm near
+   black (#131312), near-white body text (#f8fafc) drops to #e6e4db, and the
+   sky accent (#38bdf8) becomes the AtriHord blue (#3987e5). That is the point —
+   the old pairing was the highest-contrast surface in the estate.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --bg-color: var(--page);
+  --card-bg: var(--surface);
+  --accent-color: var(--accent);
+  --text-main: var(--ink);
+  --text-sub: var(--muted);
+  --border-color: var(--line);
+  --error-color: var(--down);
+  --success-color: var(--ok);
+}
+
+/* ─── Component corrections ───────────────────────────────────────────────
+   Carried by :root purely for specificity: main.css loads after this file, so
+   a bare `.badge` selector here would lose the cascade to the rule there.
+   `:root .badge` (0,2,0) beats `.badge` (0,1,0) whatever the order. Drop the
+   prefix once the competing rule is gone from main.css.
+
+   The other literals that used to need overriding here — .task-card's slate
+   plane, .btn's black label, the input and stat-tile backgrounds — were
+   converted to tokens in main.css directly, which is the endpoint this shim
+   exists to reach. Nothing to override for them any more. */
+
+/* Source badges stay branded — a YouTube badge should look like YouTube — but
+   the pill geometry comes from the shared scale. */
+:root .badge { border-radius: var(--r-xs); font-size: var(--text-xs); }

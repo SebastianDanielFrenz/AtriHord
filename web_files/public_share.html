@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shared Media</title>
+  <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
+       it into an app: a local copy is a copy that drifts. -->
+  <link rel="stylesheet" href="/api/public/assets/css/atrihord.css">
+  <link rel="stylesheet" href="/api/public/assets/css/main.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header share-page-header">
+      <img id="shareCover" class="share-page-cover" alt="" style="display:none;">
+      <h1 id="shareTitle">Shared Media</h1>
+    </div>
+
+    <div id="shareError" class="card media-error" style="display:none;"></div>
+
+    <div class="card media-browser-card" id="shareBrowserCard" style="display:none;">
+      <div class="share-toolbar">
+        <nav id="shareBreadcrumb" class="media-breadcrumb" aria-label="Folder path" style="display:none;"></nav>
+        <button type="button" class="names-toggle" data-names-toggle aria-pressed="false"
+                title="Show file names on the tiles">Names</button>
+      </div>
+      <div id="shareGrid" class="media-grid media-gallery"></div>
+      <div id="shareEmpty" class="media-empty" style="display:none;">This folder is empty.</div>
+    </div>
+  </div>
+
+  <!-- data-self-managed: this modal runs its own Escape/Back/history handling
+       (see openMediaPreview / closeMediaPreview), so overlay-dismiss.js must
+       not add a second one - two controllers made it reopen on close. -->
+  <div id="mediaPreviewModal" class="modal" role="dialog" aria-modal="true" data-self-managed>
+    <div class="modal-content media-preview-content">
+      <div class="modal-header">
+        <h3 id="mediaPreviewTitle">Preview</h3>
+        <div class="modal-header-actions">
+          <button type="button" id="mediaVrBtn" class="info-btn convert3d-btn vr-btn" title="View in VR" hidden>VR</button>
+          <span id="shareVrStatus" role="status" class="convert3d-status"></span>
+          <button type="button" id="mediaInfoBtn" class="info-btn" title="File information">&#9432;</button>
+          <button type="button" class="close-btn" onclick="closeMediaPreview()" aria-label="Close">&times;</button>
+        </div>
+      </div>
+      <div id="mediaPreviewBody" class="media-preview-body"></div>
+      <div id="mediaInfoPanel" class="media-info-panel" style="display:none;"></div>
+    </div>
+  </div>
+
+  <script src="/api/public/assets/js/overlay-dismiss.js"></script>
+  <script src="/api/public/assets/js/player.js"></script>
+  <script src="/api/public/assets/js/interp.js"></script>
+  <script src="/api/public/assets/js/upscale.js"></script>
+  <script src="/api/public/assets/js/gallery.js"></script>
+  <script src="/api/public/assets/js/stereo3d.js"></script>
+  <script src="/api/public/assets/js/share-vr.js"></script>
+  <script src="/api/public/assets/js/public_share.js"></script>
+  <!-- The estate's theme control. It applies the theme this browser chose on
+       any AtriHord page of this site (stored per browser, not per account) and draws
+       no user chip here: there is no mount point and a share visitor is usually
+       not signed in. -->
+  <script src="/api/public/assets/js/atrihord-user.js" defer></script>
+</body>
+</html>

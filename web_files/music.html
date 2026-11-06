@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#131312">
+  <title>Music</title>
+  <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
+       it into an app: a local copy is a copy that drifts. -->
+  <link rel="stylesheet" href="/css/atrihord.css">
+  <link rel="stylesheet" href="/css/music.css">
+</head>
+<body class="ah music-app">
+  <header class="mu-top">
+    <button type="button" class="mu-icon-btn mu-menu-btn" id="muMenuBtn" aria-label="Menu" aria-expanded="false"></button>
+    <a class="mu-brand" href="#/" aria-label="Music home"><span class="mu-brand-mark" aria-hidden="true"></span>Music</a>
+    <form class="mu-search" id="muSearchForm" role="search" autocomplete="off">
+      <span class="mu-search-icon" aria-hidden="true"></span>
+      <input type="search" id="muSearch" placeholder="Search songs, artists, albums, playlists" aria-label="Search">
+    </form>
+    <div class="mu-top-end">
+      <a class="mu-top-link" id="muSpatialLink" hidden href="/app/ksf-spatial-bridge.exe" title="Windows app: plays the music through Windows Spatial Sound, including height speakers" download>Spatial app</a>
+      <a class="mu-top-link" href="/media.html" title="The media library">Library ↗</a>
+      <div data-ah-user data-logout="/logout"></div>
+    </div>
+  </header>
+
+  <nav class="mu-side" id="muSide" aria-label="Music">
+    <a class="mu-nav" href="#/" data-nav="home"><span class="mu-nav-icon" data-icon="home"></span>Home</a>
+    <a class="mu-nav" href="#/library/playlists" data-nav="library"><span class="mu-nav-icon" data-icon="library"></span>Library</a>
+    <a class="mu-nav" href="#/history" data-nav="history"><span class="mu-nav-icon" data-icon="history"></span>History</a>
+    <a class="mu-nav" href="#/search" data-nav="search"><span class="mu-nav-icon" data-icon="search"></span>Search</a>
+    <div class="mu-side-sep"></div>
+    <button type="button" class="mu-new-pl" id="muNewPlaylist"><span data-icon="plus"></span>New playlist</button>
+    <div class="mu-side-title">Your playlists</div>
+    <ul class="mu-side-list" id="muSideMine"></ul>
+    <div class="mu-side-title">Playlists</div>
+    <ul class="mu-side-list" id="muSidePlaylists"></ul>
+    <div class="mu-side-sep"></div>
+    <label class="mu-side-setting" title="Every song and video plays at this loudness. A very dynamic file stops where it would clip.">
+      <span class="mu-side-title">Loudness</span>
+      <select id="muTargetLufs" aria-label="Target loudness"></select>
+    </label>
+  </nav>
+
+  <main class="mu-main" id="muMain" tabindex="-1">
+    <div class="mu-loading" id="muLoading">Loading your music…</div>
+  </main>
+
+  <aside class="mu-queue" id="muQueue" aria-label="Up next" hidden>
+    <div class="mu-queue-head">
+      <h2>Up next <span class="mu-queue-sub" id="muQueueSub"></span></h2>
+      <label class="mu-switch" title="When the queue runs out, go on with songs that sound alike">
+        <input type="checkbox" id="muAutoplaySwitch" checked> <span>Autoplay</span>
+      </label>
+      <button type="button" class="mu-text-btn" id="muQueueClear">Clear</button>
+      <button type="button" class="mu-icon-btn" id="muQueueClose" aria-label="Close the queue" data-icon="close"></button>
+    </div>
+    <ol class="mu-queue-list" id="muQueueList"></ol>
+  </aside>
+
+  <section class="mu-stage" id="muStage" aria-label="Now playing" hidden>
+    <div class="mu-stage-bar">
+      <button type="button" class="mu-icon-btn" id="muStageClose" aria-label="Close the player" data-icon="collapse"></button>
+      <div class="mu-stage-chips" id="muStageChips"></div>
+      <button type="button" class="mu-icon-btn" id="muStageSettings" aria-label="Video settings" aria-expanded="false" data-icon="gear" hidden></button>
+      <button type="button" class="mu-icon-btn" id="muStageInfo" aria-label="Details" aria-expanded="false" data-icon="info"></button>
+      <button type="button" class="mu-icon-btn" id="muFullscreen" aria-label="Fullscreen" aria-pressed="false" data-icon="fullscreen"></button>
+    </div>
+    <div class="mu-stage-now">
+      <!-- Song or its music video, as YouTube Music switches between them.
+           Only there when this song has a video in the library. -->
+      <div class="mu-stage-modes" id="muStageModes" role="group" aria-label="What to show" hidden>
+        <button type="button" class="mu-mode" id="muModeSong" aria-pressed="true">Song</button>
+        <button type="button" class="mu-mode" id="muModeVideo" aria-pressed="false">Video</button>
+      </div>
+      <div class="mu-stage-art">
+        <div class="mu-stage-fit" id="muStageFit">
+          <img class="mu-stage-cover" id="muStageCover" alt="" decoding="async">
+          <video class="mu-stage-video" id="muStageVideo" playsinline hidden></video>
+          <div class="mu-stage-ph" id="muStagePh" hidden></div>
+        </div>
+      </div>
+    </div>
+    <div class="mu-info-panel" id="muInfoPanel" hidden aria-label="Details"></div>
+    <!-- js/interp.js fills this: Smooth motion, the screen's refresh rate and
+         the bandwidth cap, the same menu the library's player has. -->
+    <div class="player-settings-menu" id="muSettingsMenu" hidden aria-label="Video settings"></div>
+    <aside class="mu-stage-queue" aria-label="Up next">
+      <div class="mu-queue-head">
+        <h2>Up next <span class="mu-queue-sub" id="muStageQueueSub"></span></h2>
+        <label class="mu-switch" title="When the queue runs out, go on with songs that sound alike">
+          <input type="checkbox" id="muStageAutoplay" checked> <span>Autoplay</span>
+        </label>
+        <button type="button" class="mu-text-btn" id="muStageClear">Clear</button>
+      </div>
+      <ol class="mu-queue-list" id="muStageQueueList"></ol>
+    </aside>
+  </section>
+
+  <footer class="mu-player" id="muPlayer" aria-label="Player" hidden>
+    <input type="range" class="mu-seek" id="muSeek" min="0" max="1000" value="0" step="1" aria-label="Seek">
+    <div class="mu-player-row">
+      <div class="mu-controls">
+        <button type="button" class="mu-icon-btn" id="muPrev" aria-label="Previous" data-icon="prev"></button>
+        <button type="button" class="mu-play-btn" id="muPlay" aria-label="Play" data-icon="play"></button>
+        <button type="button" class="mu-icon-btn" id="muNext" aria-label="Next" data-icon="next"></button>
+        <span class="mu-time" id="muTime">0:00 / 0:00</span>
+      </div>
+      <div class="mu-now">
+        <img class="mu-now-cover" id="muNowCover" alt="" width="48" height="48">
+        <div class="mu-now-text">
+          <div class="mu-now-title" id="muNowTitle"></div>
+          <div class="mu-now-sub" id="muNowSub"></div>
+        </div>
+        <button type="button" class="mu-icon-btn" id="muNowMore" aria-label="More for this song" data-icon="more" data-menu-align="start"></button>
+      </div>
+      <div class="mu-extras">
+        <button type="button" class="mu-heights" id="muSurround" aria-pressed="false" disabled>Stereo</button>
+        <button type="button" class="mu-heights" id="muHeights" aria-pressed="false" disabled>Heights</button>
+        <button type="button" class="mu-icon-btn mu-vol-btn" id="muMute" aria-label="Mute" data-icon="volume"></button>
+        <input type="range" class="mu-volume" id="muVolume" min="0" max="100" value="100" aria-label="Volume">
+        <datalist id="muVolStop"><option value="100"></option></datalist>
+        <button type="button" class="mu-icon-btn" id="muRepeat" aria-label="Repeat: off" aria-pressed="false" data-icon="repeat"></button>
+        <button type="button" class="mu-icon-btn" id="muShuffle" aria-label="Shuffle" aria-pressed="false" data-icon="shuffle"></button>
+        <button type="button" class="mu-icon-btn" id="muAutoplay" aria-label="Autoplay: on" aria-pressed="true" data-icon="autoplay"></button>
+        <button type="button" class="mu-icon-btn" id="muQueueBtn" aria-label="Up next" aria-pressed="false" data-icon="queue"></button>
+        <button type="button" class="mu-icon-btn" id="muExpand" aria-label="Open the player" aria-expanded="false" data-icon="expand"></button>
+      </div>
+    </div>
+    <audio id="muAudio" preload="metadata"></audio>
+  </footer>
+
+  <div class="mu-menu" id="muMenu" role="menu" hidden></div>
+  <div class="mu-toast" id="muToast" role="status" aria-live="polite" hidden></div>
+  <dialog class="mu-dialog" id="muDialog">
+    <form method="dialog" class="mu-dialog-form" id="muDialogForm">
+      <h2 id="muDialogTitle"></h2>
+      <p id="muDialogText" class="mu-dialog-text"></p>
+      <input type="text" id="muDialogInput" class="ah-field" autocomplete="off">
+      <div class="mu-dialog-actions">
+        <button type="button" class="ah-btn" id="muDialogCancel">Cancel</button>
+        <button type="submit" class="ah-btn mu-primary" id="muDialogOk">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/js/upscale.js"></script>
+  <script src="/js/interp.js"></script>
+  <script src="/js/listen_time.js"></script>
+  <script src="/js/music.js"></script>
+  <script src="/js/atrihord-user.js" defer></script>
+</body>
+</html>

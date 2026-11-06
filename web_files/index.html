@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Downloader Dashboard</title>
+  <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
+       it into an app: a local copy is a copy that drifts. -->
+  <link rel="stylesheet" href="/css/atrihord.css">
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+  <div class="top-bar">
+    <a href="/media.html" class="nav-link">Media Library</a>
+    <label class="advanced-toggle">
+      <input type="checkbox" id="advancedModeToggle">
+      Advanced Mode
+    </label>
+    <a href="/settings.html" class="nav-link nav-icon-link" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a>
+    <div data-ah-user data-logout="/logout"></div>
+  </div>
+
+  <div class="container" id="normalContainer">
+    <div class="header">
+      <h1>Media Downloader Control Panel</h1>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="card download-box" id="downloadBoxCard">
+        <form id="downloadForm">
+          <div class="form-group">
+            <label for="urlInput">Enter URL (YouTube, Twitter/X, Pixiv, Civitai, Patreon, Bluesky, DeviantArt, Discord)</label>
+            <textarea id="urlInput" placeholder="Paste supported URL..." required></textarea>
+          </div>
+          <button type="submit" class="btn">Process Download</button>
+        </form>
+      </div>
+
+      <div class="card tasks-box">
+        <h2>Active & Queued Tasks</h2>
+        <div id="cookieWarning" class="cookie-warning" role="status" hidden></div>
+        <div id="taskList" class="task-list" aria-live="polite"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="advancedLayout" class="advanced-layout">
+    <div class="adv-download-slot" id="advDownloadSlot"></div>
+
+    <div class="adv-stats-slot card">
+      <h2>System Stats</h2>
+      <div id="statsGrid" class="stats-grid" aria-live="polite"></div>
+    </div>
+
+    <div class="adv-pipes-slot">
+      <h2>Active Download Pipes</h2>
+      <div id="pipeList" class="pipe-grid"></div>
+
+      <h2 style="margin-top:18px">Library indexing</h2>
+      <div id="aiProgress" class="ai-progress">
+        <div class="ai-progress-note">loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="logModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTaskTitle">Task Logs</h3>
+        <button type="button" class="close-btn" onclick="closeLogModal()" aria-label="Close">&times;</button>
+      </div>
+      <pre id="modalLogOutput" class="modal-log-body"></pre>
+    </div>
+  </div>
+
+  <script src="/js/overlay-dismiss.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/atrihord-user.js" defer></script>
+</body>
+</html>

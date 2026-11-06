@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#131312">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Shared music</title>
+  <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
+       it into an app: a local copy is a copy that drifts. -->
+  <link rel="stylesheet" href="/api/public/assets/css/atrihord.css">
+  <!-- The music page's own stylesheet, through the public allowlist: a shared
+       link must look like the music it came from, not like a file listing.
+       This page is that page with the library taken out - same grid, same
+       hero, same rows, same player bar, same now-playing screen - so
+       body.music-share only has to close the column the sidebar used to be. -->
+  <link rel="stylesheet" href="/api/public/assets/css/music.css">
+</head>
+<body class="ah music-app music-share">
+  <header class="mu-top">
+    <span class="mu-brand"><span class="mu-brand-mark" aria-hidden="true"></span>Music</span>
+    <span class="ms-shared">a shared link</span>
+  </header>
+
+  <main class="mu-main" id="msMain">
+    <div class="mu-loading">Opening the link…</div>
+  </main>
+
+  <!-- The music page's now-playing screen (music.html #muStage), with what a
+       link can carry: the cover - upscaled for this screen, as there - what
+       comes next, fullscreen, and a download where the page has its details.
+       A song's music video is a file of its own that the link does not hold,
+       so there is no Song | Video switch here. -->
+  <section class="mu-stage" id="msStage" aria-label="Now playing" hidden>
+    <div class="mu-stage-bar">
+      <button type="button" class="mu-icon-btn" id="msStageClose" aria-label="Close the player"></button>
+      <div class="mu-stage-chips" id="msStageChips"></div>
+      <a class="mu-icon-btn" id="msStageDl" aria-label="Download this song" title="Download this song" download></a>
+      <button type="button" class="mu-icon-btn" id="msFullscreen" aria-label="Fullscreen" aria-pressed="false"></button>
+    </div>
+    <div class="mu-stage-now">
+      <div class="mu-stage-art">
+        <div class="mu-stage-fit" id="msStageFit">
+          <img class="mu-stage-cover" id="msStageCover" alt="" decoding="async">
+          <div class="mu-stage-ph" id="msStagePh" hidden></div>
+        </div>
+      </div>
+    </div>
+    <aside class="mu-stage-queue" aria-label="Up next">
+      <div class="mu-queue-head">
+        <h2>Up next</h2>
+      </div>
+      <ol class="mu-queue-list" id="msQueueList"></ol>
+    </aside>
+  </section>
+
+  <footer class="mu-player" id="msPlayer" aria-label="Player" hidden>
+    <input type="range" class="mu-seek" id="msSeek" min="0" max="1000" value="0" step="1" aria-label="Seek">
+    <div class="mu-player-row">
+      <div class="mu-controls">
+        <button type="button" class="mu-icon-btn" id="msPrev" aria-label="Previous"></button>
+        <button type="button" class="mu-play-btn" id="msPlay" aria-label="Play"></button>
+        <button type="button" class="mu-icon-btn" id="msNext" aria-label="Next"></button>
+        <span class="mu-time" id="msTime">0:00 / 0:00</span>
+      </div>
+      <div class="mu-now">
+        <img class="mu-now-cover" id="msNowCover" alt="" width="48" height="48" hidden>
+        <div class="mu-now-text">
+          <div class="mu-now-title" id="msNowTitle"></div>
+          <div class="mu-now-sub" id="msNowSub"></div>
+        </div>
+      </div>
+      <div class="mu-extras">
+        <button type="button" class="mu-icon-btn mu-vol-btn" id="msMute" aria-label="Mute"></button>
+        <input type="range" class="mu-volume" id="msVolume" min="0" max="100" value="100" aria-label="Volume">
+        <button type="button" class="mu-icon-btn" id="msExpand" aria-label="Open the player" aria-expanded="false"></button>
+      </div>
+    </div>
+    <audio id="msAudio" preload="metadata"></audio>
+  </footer>
+
+  <!-- media-dl's live upscaling, the same file the music page and the file
+       share page use, pointed at this link's token-gated routes. -->
+  <script src="/api/public/assets/js/upscale.js"></script>
+  <script src="/api/public/assets/js/music_share.js"></script>
+</body>
+</html>

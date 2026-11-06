@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Library in VR</title>
+  <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
+       it into an app: a local copy is a copy that drifts. -->
+  <link rel="stylesheet" href="/css/atrihord.css">
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body class="media-page">
+  <div class="top-bar">
+    <a href="/media.html" class="nav-link">&larr; Media Library</a>
+    <div data-ah-user data-logout="/logout"></div>
+  </div>
+
+  <main class="container vr-landing">
+    <header class="vr-hero">
+      <div><p class="vr-eyebrow">YOUR MEDIA, AROUND YOU</p><h1>Step into your library.</h1>
+      <p class="vr-intro">Pick a character, find a familiar face, or return to something you saved.</p></div>
+      <div class="card vr-launch" id="vrCard">
+        <p id="vrStart">Starts at: Home</p>
+        <button type="button" id="vrEnter" class="btn">Enter VR</button>
+        <button type="button" id="vrPreview" class="btn btn-quiet" title="The same scene in this window, with the mouse as the controller">Desktop preview</button>
+        <p id="vrStatus" role="status" aria-live="polite">Checking for VRâ€¦</p>
+        <p id="vrHint"></p><p id="vrMessage" role="alert"></p>
+      </div>
+    </header>
+    <nav id="vrDestinations" class="vr-destinations" aria-label="Choose where VR starts"></nav>
+    <section class="card vr-discovery" aria-labelledby="vrSearchTitle">
+      <div class="vr-discovery-head">
+        <div><p class="vr-eyebrow">SEARCH YOUR LIBRARY</p><h2 id="vrSearchTitle">Find a picture or video</h2></div>
+      </div>
+      <form id="vrGlobalSearch" class="vr-search-form">
+        <label class="vr-search-query">Search text<input id="vrSearchQuery" type="search" placeholder="Filename, folder, tags or people…" autocomplete="off"></label>
+        <label>Search in<select id="vrSearchMode">
+          <option value="filename">Filename</option><option value="context">Context</option>
+          <option value="ocr">Text in image</option><option value="people">Faces</option>
+          <option value="character">Character</option><option value="all">Everything</option>
+        </select></label>
+        <label>Media type<select id="vrFilterKind"><option value="">All</option><option value="image">Images</option><option value="video">Videos</option></select></label>
+        <label>Orientation<select id="vrFilterOrientation"><option value="">Any</option><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option><option value="square">Square</option></select></label>
+        <label>Minimum size<select id="vrFilterResolution"><option value="">Any</option><option value="720p">720p</option><option value="fhd">FHD</option><option value="wqhd">WQHD</option><option value="4k">4K</option><option value="8k">8K</option></select></label>
+        <label class="vr-search-favorite"><input id="vrFilterFavorites" type="checkbox"> Favourites only</label>
+        <button type="submit" class="btn">Use these results</button>
+        <details class="vr-search-more"><summary>More filters</summary>
+          <div class="vr-search-extra">
+            <label>Minimum width<select id="vrFilterWidth"><option value="">Any</option><option value="720p">720p</option><option value="fhd">FHD</option><option value="wqhd">WQHD</option><option value="4k">4K</option><option value="8k">8K</option></select></label>
+            <label>Minimum height<select id="vrFilterHeight"><option value="">Any</option><option value="720p">720p</option><option value="fhd">FHD</option><option value="wqhd">WQHD</option><option value="4k">4K</option><option value="8k">8K</option></select></label>
+            <label>Minimum frame rate<select id="vrFilterMinFps"><option value="">Any</option></select></label>
+            <label>Maximum frame rate<select id="vrFilterMaxFps"><option value="">Any</option></select></label>
+            <fieldset id="vrFilterContent"><legend>Content</legend><span>Loading choices…</span></fieldset>
+          </div>
+        </details>
+      </form>
+      <p class="vr-controls">More filters, sorting and search within a character or face are available on the VR wall.</p>
+    </section>
+    <section class="card vr-discovery" aria-labelledby="vrBrowseTitle">
+      <div class="vr-discovery-head"><div><p class="vr-eyebrow">BROWSE BY WHO</p><h2 id="vrBrowseTitle">Characters &amp; faces</h2></div>
+        <div class="vr-subject-tabs" role="group" aria-label="Browse subjects">
+          <button type="button" id="vrCharacters" class="btn btn-quiet" aria-pressed="true">Characters</button>
+          <button type="button" id="vrPeople" class="btn btn-quiet" aria-pressed="false">Faces</button>
+        </div>
+        <input type="search" id="vrSubjectSearch" placeholder="Find a character or personâ€¦" aria-label="Find a character or person">
+        <div id="vrPeopleOptions" class="vr-people-options" hidden>
+          <label><input type="checkbox" id="vrPeopleNamedOnly"> Named only</label>
+          <label>Faces to show<select id="vrPeopleShow" title="Which faces to show">
+            <option value="real">Real people</option><option value="all">Everyone, drawings included</option><option value="hidden">Hidden</option>
+          </select></label>
+        </div>
+      </div>
+      <p id="vrSubjectNote" role="status">Loading charactersâ€¦</p>
+      <div id="vrSubjectGrid" class="vr-discovery-grid"></div>
+      <button type="button" id="vrSubjectMore" class="btn btn-quiet" hidden>Show more</button>
+    </section>
+    <p class="vr-controls">In VR: point and select with the trigger. Scroll with the thumbstick or grip and drag. Home opens characters, faces, recent media and favourites.</p>
+  </main>
+
+  <script src="/js/stereo3d.js"></script>
+  <script src="/js/discovery-grid.js"></script>
+<script type="module" src="/js/vr/page.js"></script>
+  <script src="/js/atrihord-user.js" defer></script>
+</body>
+</html>

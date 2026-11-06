@@ -1,0 +1,13 @@
+# Vision worker (vision/vision_worker.py): runs on the machine with the GPU. Python 3.10+.
+# Install torch first, from https://pytorch.org/get-started/locally/ (the build must match your GPU/CUDA),
+# then:  pip install -r requirements-vision.txt
+flask
+waitress
+pillow
+numpy
+onnxruntime-gpu   # the tagger; use plain onnxruntime on a CPU-only machine (much slower)
+transformers
+huggingface_hub
+safetensors
+spandrel          # upscaler model loader
+insightface       # OPTIONAL, face pass only. Its models are NON-COMMERCIAL (see THIRD_PARTY.md)

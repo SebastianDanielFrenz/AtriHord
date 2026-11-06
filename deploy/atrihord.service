@@ -1,0 +1,22 @@
+# systemd unit. Replace /opt/atrihord and the user, then:
+#   sudo cp deploy/atrihord.service /etc/systemd/system/ && sudo systemctl enable --now atrihord
+[Unit]
+Description=atrihord server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=atrihord
+WorkingDirectory=/opt/atrihord
+EnvironmentFile=/opt/atrihord/atrihord.env
+# yt-dlp needs ffmpeg (apt) and deno (https://deno.com) on PATH; systemd does not read ~/.bashrc.
+Environment=PATH=/opt/atrihord/venv/bin:/home/atrihord/.deno/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/atrihord/venv/bin/python -u /opt/atrihord/server.py
+Restart=always
+RestartSec=5s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target

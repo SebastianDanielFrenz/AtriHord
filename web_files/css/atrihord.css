@@ -1,0 +1,494 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   AtriHord's OWN stylesheet. Not the estate's Stylehub file.
+
+   This began as a copy of ksf.css from the estate style hub (the KSF design
+   language) and was deliberately cut loose on 2026-11-05 so AtriHord runs on
+   any server without that host. It is now maintained HERE, in this file, with
+   its own .ah-* class prefix, the "ah" body class, window.ahTheme and the
+   "ah.theme" storage key.
+
+     · Editing the Stylehub's ksf.css does NOT change AtriHord, and editing
+       this file does NOT change the estate. Nothing syncs them any more:
+       do not copy either over the other.
+     · If you are an AI or a person changing the estate-wide style: leave this
+       repository alone. Port a change here only on purpose, by hand.
+     · Keep this file free of references to any one installation (host names,
+       paths, accounts).
+   ═══════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   ATRIHORD DESIGN LANGUAGE (derived from the KSF design language, v1)
+   The single source of truth for AtriHord's pages.
+
+   Import it first, before any app stylesheet:
+       <link rel="stylesheet" href="/css/atrihord.css" />
+       <link rel="stylesheet" href="/css/app.css" />
+
+   Two layers:
+     1. TOKENS  — bare custom properties (--page, --ink, --accent …). Apps
+                  reference these instead of hard-coding hex values.
+     2. PRIMITIVES — .ah-* classes for the handful of components every AtriHord
+                  app rebuilds anyway (button, card, field, badge, chip).
+                  Prefixed so they never collide with existing app classes.
+
+   House rules, in order of importance:
+     · Low contrast is deliberate. Ink is #e6e4db, never #fff; the page is
+       #131312, never #000. Do not "fix" this — glare is the thing we are
+       avoiding.
+     · Colour carries meaning: --accent = interactive, --ok/--warn/--down =
+       status. Never decorative.
+     · Pick radii and spacing from the scales below. A new magic number is a
+       bug, not a design decision.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 1. TOKENS ───────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+
+  /* Planes — page sits lowest, each step reads as slightly nearer the viewer */
+  --page: #131312;          /* app background */
+  --surface: #1a1a19;       /* cards, panels, chart plane */
+  --surface-2: #242423;     /* inputs, controls, raised chips */
+  --surface-hover: #2e2e2c; /* hover/active state of an interactive surface */
+
+  /* Ink — four tiers, dimmest last. Below --faint, use an icon, not text. */
+  --ink: #e6e4db;           /* primary text */
+  --ink-2: #c3c2b7;         /* secondary text */
+  --muted: #898781;         /* labels, axis text, captions */
+  --faint: #605f59;         /* placeholders, disabled, decorative glyphs */
+
+  /* Lines & fills */
+  --line: #2c2c2a;          /* hairline border, gridline */
+  --line-strong: #383835;   /* baseline, divider that must read as a break */
+  --ring: rgba(230, 228, 219, 0.13);  /* border on raised/hovered elements */
+  --wash: rgba(230, 228, 219, 0.05);  /* faintest fill, zebra striping */
+
+  /* Accent — the only blue. Interactive affordances and nothing else. */
+  --accent: #3987e5;
+  --accent-hover: #5c9cea;
+  --accent-wash: rgba(57, 135, 229, 0.13);
+
+  /* Status — meaning-bearing, matched to the dataviz palette */
+  --ok: #0ca30c;
+  --warn: #fab219;
+  --down: #d03b3b;
+  --ok-wash: rgba(12, 163, 12, 0.13);
+  --warn-wash: rgba(250, 178, 25, 0.13);
+  --down-wash: rgba(208, 59, 59, 0.13);
+
+  /* Categorical series — for charts with more than one line/bar/slice.
+     Ordered: use --series-1 first and only add colours as series appear.
+     These are hues, not statuses: never colour a "failed" series red by
+     coincidence of ordering. Taken from the validated dataviz palette
+     already in use by homelab_dashboard's charts. */
+  --series-1: #3987e5;      /* blue — same value as --accent */
+  --series-2: #199e70;      /* green */
+  --series-3: #c98500;      /* amber */
+  --series-4: #e66767;      /* red */
+  --series-5: #9085e9;      /* purple */
+
+  /* Type — Inter when it loads, system stack when it doesn't */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --text-xs: 0.72rem;
+  --text-sm: 0.8rem;
+  --text-base: 0.9rem;
+  --text-md: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.5rem;
+  --text-display: 4.6rem;
+
+  /* Space — 4px rhythm. Gaps and padding come from here. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 22px;
+  --sp-6: 28px;
+
+  /* Radius — four steps plus a pill. Nothing in between. */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* Elevation — shadow is for things that float, not for every card */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2);
+  --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.45);
+
+  /* Motion — one curve, two durations */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur: 0.2s;
+  --dur-slow: 0.35s;
+}
+
+/* ─── 1b. LIGHT ───────────────────────────────────────────────────────────── */
+/* The same tokens, for light. TWO blocks with the SAME body, and they have to
+   be edited together:
+
+     · [data-theme="light"] below is a deliberate choice, and applies always;
+     · this media query applies ONLY to [data-theme="auto"] - the choice to
+       follow the device, which must also be made deliberately.
+
+   Note what is NOT here: a bare `prefers-color-scheme: light` that catches
+   anything without an attribute. This estate is dark by default, and having
+   the device decide meant a light machine got light pages nobody asked for.
+   No attribute now means dark, which is also what a page that never loads
+   atrihord-user.js gets - so a page with no theme control cannot come up light.
+
+   Only tokens belong here. A rule that needs different LAYOUT in light mode is
+   a rule that was doing something wrong in dark mode. */
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] {
+  color-scheme: light;
+
+  /* Planes - warm, like the dark set, and only three steps apart: on white a
+     small difference reads as a big one. */
+  --page: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #f0eee8;
+  --surface-hover: #e6e3db;
+
+  /* Ink - four tiers again. The dimmest still passes on --surface. */
+  --ink: #1b1b19;
+  --ink-2: #3c3b36;
+  --muted: #6a6963;
+  --faint: #94928a;
+
+  --line: #e4e1d8;
+  --line-strong: #cdcabf;
+  --ring: rgba(27, 27, 25, 0.14);
+  --wash: rgba(27, 27, 25, 0.04);
+
+  /* Accent and status darken: the dark values are tuned to glow on #131312
+     and go weak and thin on white. */
+  --accent: #1f6fd0;
+  --accent-hover: #1759ac;
+  --accent-wash: rgba(31, 111, 208, 0.10);
+
+  --ok: #0a7a24;
+  --warn: #97650a;
+  --down: #c02a2a;
+  --ok-wash: rgba(10, 122, 36, 0.10);
+  --warn-wash: rgba(151, 101, 10, 0.12);
+  --down-wash: rgba(192, 42, 42, 0.10);
+
+  /* Series keep their hues and lose some light, so a chart reads as the same
+     chart in either mode. */
+  --series-1: #4a92e0;
+  --series-2: #23a37b;
+  --series-3: #d29a2b;
+  --series-4: #e0736e;
+  --series-5: #8d83e3;
+
+  /* Shadow on white is a hint, not a hole. */
+  --shadow-card: 0 1px 2px rgba(27, 27, 25, 0.08), 0 3px 12px rgba(27, 27, 25, 0.06);
+  --shadow-pop: 0 10px 34px rgba(27, 27, 25, 0.18);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Planes - warm, like the dark set, and only three steps apart: on white a
+     small difference reads as a big one. */
+  --page: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #f0eee8;
+  --surface-hover: #e6e3db;
+
+  /* Ink - four tiers again. The dimmest still passes on --surface. */
+  --ink: #1b1b19;
+  --ink-2: #3c3b36;
+  --muted: #6a6963;
+  --faint: #94928a;
+
+  --line: #e4e1d8;
+  --line-strong: #cdcabf;
+  --ring: rgba(27, 27, 25, 0.14);
+  --wash: rgba(27, 27, 25, 0.04);
+
+  /* Accent and status darken: the dark values are tuned to glow on #131312
+     and go weak and thin on white. */
+  --accent: #1f6fd0;
+  --accent-hover: #1759ac;
+  --accent-wash: rgba(31, 111, 208, 0.10);
+
+  --ok: #0a7a24;
+  --warn: #97650a;
+  --down: #c02a2a;
+  --ok-wash: rgba(10, 122, 36, 0.10);
+  --warn-wash: rgba(151, 101, 10, 0.12);
+  --down-wash: rgba(192, 42, 42, 0.10);
+
+  /* Series keep their hues and lose some light, so a chart reads as the same
+     chart in either mode. */
+  --series-1: #4a92e0;
+  --series-2: #23a37b;
+  --series-3: #d29a2b;
+  --series-4: #e0736e;
+  --series-5: #8d83e3;
+
+  /* Shadow on white is a hint, not a hole. */
+  --shadow-card: 0 1px 2px rgba(27, 27, 25, 0.08), 0 3px 12px rgba(27, 27, 25, 0.06);
+  --shadow-pop: 0 10px 34px rgba(27, 27, 25, 0.18);
+}
+
+/* ─── 2. BASE ─────────────────────────────────────────────────────────────── */
+/* Opt-in: add class="ah" to <body> (or :root) so importing the tokens alone
+   never restyles an app that isn't ready for it. */
+body.ah {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.ah h1, .ah h2, .ah h3 { font-weight: 600; letter-spacing: -0.01em; }
+.ah a { color: var(--accent); text-decoration: none; }
+.ah a:hover { color: var(--accent-hover); text-decoration: underline; }
+.ah code, .ah pre { font-family: var(--font-mono); font-size: var(--text-sm); }
+
+/* One focus treatment everywhere, keyboard-only */
+.ah :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+.ah ::-webkit-scrollbar { width: 6px; height: 6px; }
+.ah ::-webkit-scrollbar-track { background: transparent; }
+.ah ::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 3px; }
+.ah ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* Section label — the small uppercase heading above a group of things */
+.ah-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+/* ─── 3. PRIMITIVES ───────────────────────────────────────────────────────── */
+
+/* Card — the default container. Shadow only when it floats above content. */
+.ah-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+}
+.ah-card.raised { box-shadow: var(--shadow-card); }
+.ah-card.interactive { transition: all var(--dur) var(--ease); cursor: pointer; }
+.ah-card.interactive:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px var(--accent-wash);
+}
+
+/* Button — secondary by default; .primary for the one action that matters. */
+.ah-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: 7px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--ring);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.ah-btn svg { width: 14px; height: 14px; }
+.ah-btn:hover { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); }
+.ah-btn:disabled { opacity: 0.4; pointer-events: none; }
+.ah-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ah-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+.ah-btn.danger:hover { background: var(--down-wash); border-color: var(--down); color: var(--down); }
+.ah-btn.ghost { background: none; border-color: transparent; color: var(--muted); }
+.ah-btn.ghost:hover { background: var(--surface-2); color: var(--ink); border-color: var(--ring); }
+
+/* Icon-only button — square, same states as .ah-btn */
+.ah-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.ah-icon-btn svg { width: 15px; height: 15px; }
+.ah-icon-btn:hover { color: var(--ink); border-color: var(--accent); }
+.ah-icon-btn.danger:hover { color: var(--down); border-color: var(--down); background: var(--down-wash); }
+
+/* Field — text inputs, selects, textareas */
+.ah-field {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 7px 11px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--text-sm);
+}
+.ah-field::placeholder { color: var(--faint); }
+.ah-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+
+/* Badge — a status word. Colour is the message; never use it decoratively. */
+.ah-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: var(--wash);
+  color: var(--muted);
+}
+.ah-badge.ok { background: var(--ok-wash); color: var(--ok); }
+.ah-badge.warn { background: var(--warn-wash); color: var(--warn); }
+.ah-badge.down { background: var(--down-wash); color: var(--down); }
+.ah-badge.accent { background: var(--accent-wash); color: var(--accent); }
+
+/* Chip — a selectable pill (filter, search engine, tag) */
+.ah-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 5px 13px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.ah-chip:hover { border-color: var(--accent); color: var(--ink); }
+.ah-chip.active { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); }
+
+/* Status dot — the smallest possible up/down signal */
+.ah-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex-shrink: 0;
+}
+.ah-dot.ok { background: var(--ok); box-shadow: 0 0 6px var(--ok-wash); }
+.ah-dot.warn { background: var(--warn); }
+.ah-dot.down { background: var(--down); box-shadow: 0 0 6px var(--down-wash); }
+
+/* Meter — a proportion. Fill colour follows status, not decoration. */
+.ah-meter { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.ah-meter > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width var(--dur-slow) var(--ease); }
+.ah-meter > span.warn { background: var(--warn); }
+.ah-meter > span.down { background: var(--down); }
+
+/* Toast — transient confirmation, bottom-centre */
+.ah-toast {
+  position: fixed;
+  bottom: var(--sp-6);
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  z-index: 2000;
+  padding: 10px 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--ring);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: all var(--dur-slow) var(--ease);
+}
+.ah-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+.ah-toast.success { border-color: var(--ok); color: var(--ok); }
+.ah-toast.error { border-color: var(--down); color: var(--down); }
+
+/* Modal — dimmed backdrop plus a floating panel */
+.ah-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5vh 4vw;
+  background: color-mix(in oklab, var(--page) 55%, transparent);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  visibility: hidden;
+  transition: all var(--dur) var(--ease);
+}
+.ah-modal.active { opacity: 1; visibility: visible; }
+.ah-modal-panel {
+  width: 100%;
+  max-width: 700px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  transform: translateY(-16px) scale(0.98);
+  transition: transform 0.25s var(--ease);
+}
+.ah-modal.active .ah-modal-panel { transform: translateY(0) scale(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ah *, .ah *::before, .ah *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── THEME CONTROL ───────────────────────────────────────────────────────── */
+/* Three states, in the user menu. Auto is not a compromise between the other
+   two: it is the device deciding, which is right far more often than a
+   preference somebody set once and forgot. */
+.ah-user__theme {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--line);
+  color: var(--muted); font-size: var(--text-xs);
+}
+.ah-user__seg {
+  display: inline-flex; padding: 2px; gap: 2px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-pill);
+}
+.ah-user__segbtn {
+  border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: var(--text-xs); text-transform: capitalize;
+  padding: 3px 10px; border-radius: var(--r-pill); cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.ah-user__segbtn:hover { color: var(--ink); }
+.ah-user__segbtn[aria-pressed="true"] {
+  background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px var(--wash);
+}

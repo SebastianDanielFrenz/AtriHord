@@ -1,0 +1,10 @@
+# The part of Authelia's configuration.yml that matters for atrihord.
+# Groups map to roles: see MEDIA_ADMIN_GROUPS / MEDIA_GUEST_GROUPS in atrihord.env.
+access_control:
+  default_policy: deny
+  rules:
+    - domain: media.example.org
+      policy: one_factor
+      subject:
+        - "group:admins"   # full access: downloads, settings, library management
+        - "group:media"    # guests: browse and watch only

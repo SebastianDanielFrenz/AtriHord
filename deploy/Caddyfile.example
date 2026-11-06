@@ -1,0 +1,32 @@
+# Caddy v2 in front of atrihord, signed in through Authelia (forward auth).
+# Authelia answers on auth.example.org; atrihord listens on 127.0.0.1:8000 on the same machine.
+
+auth.example.org {
+	reverse_proxy 127.0.0.1:9091
+}
+
+media.example.org {
+	# Public share links must work without signing in: let them past the auth check. The server
+	# serves only the share viewer's own scripts without a login (see anon_allowed_files in server.py).
+	@public path /share/* /api/public/* /css/* /js/public_share.js /js/gallery.js /js/player.js /js/overlay-dismiss.js /js/upscale.js
+	handle @public {
+		# Never let a visitor choose their own identity: strip anything that looks like the auth headers.
+		reverse_proxy 127.0.0.1:8000 {
+			header_up -Remote-User
+			header_up -Remote-Groups
+			header_up -Remote-Name
+			header_up -Remote-Email
+		}
+	}
+
+	handle {
+		forward_auth 127.0.0.1:9091 {
+			uri /api/authz/forward-auth
+			copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+		}
+		# Uploads and long downloads: no body size cap, generous timeouts.
+		reverse_proxy 127.0.0.1:8000 {
+			flush_interval -1
+		}
+	}
+}

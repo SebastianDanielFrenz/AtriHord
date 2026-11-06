@@ -1,0 +1,292 @@
+/* The genre map page (genres.html). Tokens from atrihord.css only. */
+
+body.genres-page .container {
+  max-width: min(96vw, 2600px);
+}
+/* Room for the player bar once something plays. */
+body.genres-page.has-player {
+  padding-bottom: 5.5rem;
+}
+
+.genres-header {
+  margin-bottom: var(--sp-4);
+}
+.genres-sub {
+  margin-top: var(--sp-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.genres-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.genres-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.genres-seg button {
+  padding: 6px 14px;
+  border: 0;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.genres-seg button + button {
+  border-left: 1px solid var(--line);
+}
+.genres-seg button[aria-pressed="true"] {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+#genresSearch {
+  flex: 1 1 14rem;
+  max-width: 26rem;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+.genres-matches {
+  min-width: 5rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.genres-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.genres-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16rem;
+  gap: var(--sp-3);
+}
+.genres-canvas-wrap {
+  position: relative;
+  height: max(22rem, calc(100vh - 13rem));
+  height: max(22rem, calc(100dvh - 13rem));
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+#genresCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+#genresCanvas.dragging {
+  cursor: grabbing;
+}
+#genresCanvas.pointing {
+  cursor: pointer;
+}
+
+.genres-tip {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  gap: var(--sp-2);
+  max-width: 22rem;
+  padding: var(--sp-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+/* A class that sets display would otherwise keep a hidden element on screen. */
+.genres-tip[hidden],
+.genres-empty[hidden],
+.genres-player[hidden],
+.genres-all[hidden] {
+  display: none;
+}
+.genres-tip img {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  object-fit: cover;
+}
+.genres-tip-title {
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.genres-tip-line {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.genres-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  color: var(--muted);
+  text-align: center;
+}
+.genres-hint {
+  position: absolute;
+  left: var(--sp-3);
+  bottom: var(--sp-2);
+  color: var(--faint);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+
+.genres-legend {
+  max-height: max(22rem, calc(100vh - 13rem));
+  max-height: max(22rem, calc(100dvh - 13rem));
+  overflow-y: auto;
+  font-size: var(--text-sm);
+}
+.genres-legend-note {
+  margin: 0 6px var(--sp-2);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.genres-group,
+.genres-all {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.genres-group:hover,
+.genres-all:hover {
+  background: var(--surface-hover);
+}
+.genres-all {
+  color: var(--accent);
+}
+.genres-group[aria-pressed="false"] {
+  color: var(--faint);
+}
+.genres-group[aria-pressed="false"] .genres-swatch {
+  opacity: 0.25;
+}
+.genres-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.genres-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.genres-styles {
+  margin: 2px 0 var(--sp-2) 14px;
+}
+.genres-style {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px 6px;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.genres-player {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--line-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+.genres-player img {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  object-fit: cover;
+}
+.genres-player-text {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.genres-player-title,
+.genres-player-styles {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.genres-player-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+.genres-player-styles {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.genres-player audio {
+  flex: 0 1 26rem;
+  min-width: 12rem;
+  height: 36px;
+}
+.genres-player .btn-quiet {
+  flex: none;
+  text-decoration: none;
+}
+
+@media (max-width: 800px) {
+  .genres-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .genres-canvas-wrap {
+    height: 65vh;
+    height: 65dvh;
+  }
+  .genres-legend {
+    max-height: none;
+    columns: 2;
+  }
+  .genres-player {
+    flex-wrap: wrap;
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .genres-player audio {
+    flex: 1 1 100%;
+  }
+  body.genres-page.has-player {
+    padding-bottom: 9rem;
+  }
+}

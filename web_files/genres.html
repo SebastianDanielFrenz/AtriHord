@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Genre Map</title>
+  <!-- One stylesheet for the whole estate, served by the Stylehub. Never copy
+       it into an app: a local copy is a copy that drifts. -->
+  <link rel="stylesheet" href="/css/atrihord.css">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/genres.css">
+</head>
+<body class="genres-page">
+  <div class="top-bar">
+    <a href="/media.html" class="nav-link">&larr; Media Library</a>
+    <div data-ah-user data-logout="/logout"></div>
+  </div>
+
+  <div class="container">
+    <div class="header genres-header">
+      <h1>Genre Map</h1>
+      <p class="genres-sub" id="genresSummary">Loading…</p>
+    </div>
+
+    <div class="genres-toolbar">
+      <div class="genres-seg" role="group" aria-label="View">
+        <button type="button" data-view="2d" aria-pressed="true">2D</button>
+        <button type="button" data-view="3d" aria-pressed="false">3D</button>
+      </div>
+      <input type="search" id="genresSearch" placeholder="Find a track, artist or style…" autocomplete="off"
+             aria-label="Find a track">
+      <span id="genresMatches" class="genres-matches" aria-live="polite"></span>
+      <label class="genres-check" title="When a track ends, play the closest one on the map not played yet">
+        <input type="checkbox" id="genresAutoplay" checked> Keep playing nearby
+      </label>
+      <button type="button" id="genresReset" class="btn btn-quiet">Reset view</button>
+    </div>
+
+    <div class="genres-stage">
+      <div class="genres-canvas-wrap" id="genresCanvasWrap">
+        <canvas id="genresCanvas" role="img" aria-label="The music library as a map: tracks that sound alike sit together"></canvas>
+        <div id="genresTip" class="genres-tip" hidden></div>
+        <div id="genresEmpty" class="genres-empty" hidden></div>
+        <p class="genres-hint" id="genresHint"></p>
+      </div>
+      <aside class="genres-legend" id="genresLegend" aria-label="Genres"></aside>
+    </div>
+  </div>
+
+  <div class="genres-player" id="genresPlayer" hidden>
+    <img id="genresPlayerCover" alt="">
+    <div class="genres-player-text">
+      <div id="genresPlayerTitle" class="genres-player-title"></div>
+      <div id="genresPlayerStyles" class="genres-player-styles"></div>
+    </div>
+    <audio id="genresAudio" controls preload="none"></audio>
+    <button type="button" id="genresNext" class="btn btn-quiet" title="Play the closest track on the map not played yet">Next nearby</button>
+    <a id="genresOpen" class="btn btn-quiet" href="/media.html">Open in library</a>
+  </div>
+
+  <script src="/js/genres.js"></script>
+  <script src="/js/atrihord-user.js" defer></script>
+</body>
+</html>

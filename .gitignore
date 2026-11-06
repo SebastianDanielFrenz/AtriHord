@@ -1,0 +1,50 @@
+# --- Python / tooling
+__pycache__/
+*.pyc
+venv/
+venv_wsl/
+.venv/
+.claude/
+# --- backups and scratch copies (history lives in git from now on)
+*.bak
+*.bak_*
+*.bak-*
+*.pre-*
+*.orig
+*.tmp
+# --- logs, locks, runtime data
+*.log
+*.lock
+*.sqlite3
+*.sqlite3-*
+.DS_Store
+Thumbs.db
+
+# --- SECRETS: never commit
+users.json
+auth.txt
+cookies_*.txt
+config.json
+*_config.json
+# --- runtime state written by the server
+tasks.json
+pipeline_usage.json
+youtube_download_events.json
+recent_media*.json
+media_dimensions.json
+shares.json
+roots.json
+# --- third-party downloader with its own credentials
+PixivUtil2/
+# --- media that ended up in the tree
+*.opus
+*.webm
+*.mp4
+*.mka
+*.m4a
+web_files/downloads/
+
+# private security notes (findings, known limits): never publish
+SECURITY_PRIVATE.md
+private_notes/
+stage/
