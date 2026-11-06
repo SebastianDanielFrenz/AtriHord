@@ -797,7 +797,9 @@
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.type === 'info') {
         BR.info = msg;
-        bridgeEnsureTap().then(() => { if (LOUD.ctx && UP.input) buildUpmix(); else renderSurround(); });
+        // (a rebuild is a short mute and reconnect: not when the bridge route already stands, as two of them in a row
+        // were an audible gap)
+        bridgeEnsureTap().then(() => { if (LOUD.ctx && UP.input && !UP.viaBridge) buildUpmix(); else renderSurround(); });
       } else if (msg.type === 'gone') {           // the app lost Windows Spatial Sound: the browser plays again
         console.warn('[music-bridge] the app reports no Windows Spatial Sound');
         BR.info = null;
@@ -923,17 +925,18 @@
     try { UP.input.disconnect(); } catch (e) { /* not connected yet */ }
     for (const n of UP.nodes) { try { n.disconnect(); } catch (e) { /* gone */ } }
     UP.nodes = [];
+    UP.viaBridge = false;
     if (SPK.sp) { try { UP.input.connect(SPK.sp); } catch (e) { /* as is */ } }
     bridgeConnect();
     // The app has answered but its tap is still being made: route through the browser for now and switch over the
     // moment the tap exists, instead of staying on the browser's output until the next toggle.
-    if (!BR.node && BR.info) bridgeEnsureTap().then(() => { if (BR.node && bridgeActive()) buildUpmix(); });
+    if (!BR.node && BR.info) bridgeEnsureTap().then(() => { if (BR.node && bridgeActive() && !UP.viaBridge) buildUpmix(); });
     // At the first start the bridge is usually a few milliseconds from being ready (connecting, or its tap being
     // made). Playing the browser's own 7.1 meanwhile and moving over afterwards is audible: a different sound and
     // a hitch. So wait in silence, at most 600 ms, and start on the bridge route; after that (or without a bridge)
     // the browser plays as before.
     if (bridgeActive()) BR.waitDone = true;
-    const waiting = !BR.waitDone && ((BR.info && !BR.node) || (BR.ws && BR.ws.readyState === 0 && !BR.info));
+    const waiting = !BR.waitDone && ((BR.info && !BR.node) || (BR.ws && !BR.info && BR.ws.readyState <= 1));   // connecting, or open and not yet answered
     if (waiting) {
       clearTimeout(BR.waitT);
       BR.waitT = setTimeout(() => { BR.waitDone = true; buildUpmix(); }, 600);
@@ -944,6 +947,7 @@
     const max = dest.maxChannelCount || 2;
     if (bridgeActive()) {
       UP.layout = null;
+      UP.viaBridge = true;
       try {
         dest.channelCount = Math.min(2, max);
         dest.channelCountMode = 'explicit';
