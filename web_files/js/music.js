@@ -421,12 +421,17 @@
   // ---- menus, toasts, dialogs ------------------------------------------------------
   const menu = $('muMenu');
   let menuAnchor = null;
+  let menuAtPoint = false;             // opened at the pointer (a right click), not from a button
+  // What the last right click found: was a menu open, and on which anchor. A right click closes an open
+  // menu before the element's own handler runs; a right click on the anchor of the open menu then leaves it closed.
+  let ctxWasOpenFor = null;
 
   function closeMenu() {
     menu.hidden = true;
     menu.replaceChildren();
     if (menuAnchor) menuAnchor.setAttribute('aria-expanded', 'false');
     menuAnchor = null;
+    menuAtPoint = false;
   }
 
   function openMenu(anchor, items, at) {
@@ -445,6 +450,7 @@
     }
     menu.hidden = false;
     menuAnchor = anchor;
+    menuAtPoint = !!at;
     if (anchor) anchor.setAttribute('aria-expanded', 'true');
     const r = at || anchor.getBoundingClientRect();
     const w = menu.offsetWidth, h = menu.offsetHeight;
@@ -470,9 +476,18 @@
   // exactly that (user, 2026-09-23: "a menu icon that doesn't do anything").
   document.addEventListener('click', (e) => {
     if (menu.hidden || menu.contains(e.target)) return;
-    if (menuAnchor && menuAnchor.contains(e.target)) return;
+    // (only a menu opened from a button has its opening click to skip; one opened at the pointer by a right
+    // click is closed by any left click, on its cover or the song row it belongs to as well - user, 2026-11-06:
+    // "not possible to close the right-click menu on a cover with a right click or left click")
+    if (!menuAtPoint && menuAnchor && menuAnchor.contains(e.target)) return;
     closeMenu();
   });
+  // A right click anywhere outside the menu closes it first (capture, ahead of the element's own handler, which
+  // may open a menu of its own at the new spot).
+  document.addEventListener('contextmenu', (e) => {
+    ctxWasOpenFor = menu.hidden ? null : menuAnchor;
+    if (!menu.hidden && !menu.contains(e.target)) closeMenu();
+  }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) closeMenu(); });
   window.addEventListener('resize', closeMenu);
 
@@ -1250,7 +1265,46 @@
   }
 
   // The menu of the playing song's cover: the speaker chart, and the cover itself to the clipboard.
-  async function pngBlob(blob) {
+  //
+  // The picture is fetched, decoded and re-encoded as PNG in a WORKER. An upscaled cover is tens of
+  // megapixels; decoding and encoding that on the page's own thread is a task of a hundred milliseconds
+  // or more, and the music hitches while it runs (user, 2026-11-06: "clicking copy upscaled cover can cause a
+  // hitch"; the same cost caused the hitch when the upscaled cover is swapped in, see js/upscale.js).
+  const COVER_WORKER = `self.onmessage = async (e) => {
+    try {
+      const res = await fetch(e.data.url, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      let blob = await res.blob();
+      if (blob.type !== 'image/png') {
+        const bmp = await createImageBitmap(blob);
+        const oc = new OffscreenCanvas(bmp.width, bmp.height);
+        oc.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
+        blob = await oc.convertToBlob({ type: 'image/png' });
+      }
+      self.postMessage({ blob });
+    } catch (err) { self.postMessage({ error: String(err) }); }
+  };`;
+  function coverPngInWorker(url) {
+    return new Promise((resolve, reject) => {
+      let worker, workerUrl;
+      const done = (fn, v) => { clearTimeout(timer); try { worker.terminate(); } catch (e) { /* gone */ } URL.revokeObjectURL(workerUrl); fn(v); };
+      const timer = setTimeout(() => done(reject, new Error('timeout')), 60000);
+      try {
+        if (typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function' || typeof createImageBitmap !== 'function') throw new Error('no worker');
+        workerUrl = URL.createObjectURL(new Blob([COVER_WORKER], { type: 'text/javascript' }));
+        worker = new Worker(workerUrl);
+      } catch (e) { clearTimeout(timer); if (workerUrl) URL.revokeObjectURL(workerUrl); reject(e); return; }
+      worker.onmessage = (ev) => (ev.data && ev.data.blob ? done(resolve, ev.data.blob) : done(reject, new Error((ev.data && ev.data.error) || 'no picture')));
+      worker.onerror = () => done(reject, new Error('worker'));
+      worker.postMessage({ url: new URL(url, location.href).href });
+    });
+  }
+  // The same on the page's own thread - only when no worker could do it. KNOWN TO CAUSE AUDIO HITCHES for a
+  // large cover while a song plays; it exists so the copy still works.
+  async function coverPngOnPage(url) {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
     if (blob.type === 'image/png') return blob;
     const bmp = await createImageBitmap(blob);
     const c = document.createElement('canvas');
@@ -1262,9 +1316,10 @@
   // clipboard only within the gesture, and the picture has to be fetched first.
   async function copyCover(url, what) {
     try {
-      const made = fetch(url, { credentials: 'same-origin' })
-        .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
-        .then(pngBlob);
+      const made = coverPngInWorker(url).catch((e) => {
+        console.warn('[music] cover copy: the worker path failed (' + (e && e.message) + '), converting on the main thread; this can cause an audio hitch');
+        return coverPngOnPage(url);
+      });
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': made })]);
       toast(`Copied the ${what} cover`);
     } catch (e) {
@@ -1272,6 +1327,8 @@
     }
   }
   function coverMenu(e) {
+    // a right click on the cover whose menu is open closes it (the capture handler above already did)
+    if (ctxWasOpenFor && ctxWasOpenFor === e.currentTarget) { ctxWasOpenFor = null; return; }
     const idx = Q.pos >= 0 ? Q.items[Q.pos] : -1;
     const s = idx >= 0 ? LIB.songs[idx] : null;
     const items = [{ text: SPK.el ? 'Hide speaker activity' : 'Speaker activity',
