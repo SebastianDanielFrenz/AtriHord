@@ -841,6 +841,7 @@
 
   async function bridgeMakeTap() {
     BR.loading = true;
+    const t0 = performance.now(), state0 = LOUD.ctx ? LOUD.ctx.state : 'none';
     try {
       const url = URL.createObjectURL(new Blob([TAP_CODE], { type: 'text/javascript' }));
       await LOUD.ctx.audioWorklet.addModule(url);
@@ -853,6 +854,7 @@
       BR.silent.gain.value = 0;
       node.connect(BR.silent).connect(LOUD.ctx.destination);
       BR.node = node;
+      console.info('Bridge tap ready in ' + Math.round(performance.now() - t0) + ' ms (audio context was ' + state0 + ')');
     } catch (e) {
       BR.node = null;
     } finally {
