@@ -71,13 +71,21 @@ Smooth motion: `vision/vidinterp/install.sh` and the DLL recipe in `THIRD_PARTY.
 ## Companion app: Spatial Bridge (optional, Windows)
 
 Lets the music page play through Windows Spatial Sound (Dolby Atmos, DTS:X, height speakers). It is a separate
-project with its own repository and licence (MIT): `ksf-spatial-bridge`. AtriHord only talks to it on localhost
-from the music page, and can host its signed updates.
+project with its own repository and licence (MIT): [AtriBridge](https://github.com/SebastianDanielFrenz/AtriBridge).
+AtriHord only talks to it on localhost from the music page, and can host its signed updates. The same repository
+ships a Chrome / Edge extension that upmixes other tabs (YouTube, YouTube Music) through the bridge; the music page
+and the extension share the bridge, and whichever page the user last pressed play on holds it while the other is paused.
 
-To offer it from your own server: build and sign a release with that project's `tools/publish.py`, put
-`latest.json` and `ksf-spatial-bridge.exe` in `web_files/app/spatial-bridge/`. The exe is both what the music
-page's "Spatial app" link downloads (`/app/ksf-spatial-bridge.exe`, signed-in users) and what installed copies
-fetch to update themselves (served without login at `/api/public/spatial-bridge/`). Installed copies then update themselves from `--update-url https://your.server/api/public/spatial-bridge/latest.json`.
+To offer it from your own server: take the signed `latest.json` and `ksf-spatial-bridge.exe` from a
+[release](https://github.com/SebastianDanielFrenz/AtriBridge/releases) (or build and sign your own with that
+project's `tools/publish.py`) and put both in `web_files/app/spatial-bridge/`. They are not part of this repository,
+so a `git pull` never delivers a new bridge: copy the two files again after each bridge release. The exe is both
+what the music page's "Spatial app" link downloads (`/app/ksf-spatial-bridge.exe`, signed-in users) and what
+installed copies fetch to update themselves (served without login at `/api/public/spatial-bridge/`). Installed
+copies then update themselves from `--update-url https://your.server/api/public/spatial-bridge/latest.json`
+(or `--update-github SebastianDanielFrenz/AtriBridge` to follow the GitHub releases), and need
+`--origin https://your.server` (or `origin=` in `spatial-bridge.conf`) to accept connections from your music page:
+the built-in allow-list only covers media-dl.ksfhost.de, music.ksfhost.de and localhost.
 Without these files the link redirects to `MEDIA_BRIDGE_DOWNLOAD_URL` if you set one, else the music page hides it.
 
 ## Styling
