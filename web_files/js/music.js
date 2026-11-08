@@ -580,13 +580,175 @@
     RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
     if (RLOG.length > 300) RLOG.shift();
   }
-  console.info('[music] build 2026-11-06f (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start)');
+  console.info('[music] build 2026-11-08a (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
   // The level of the signal inside the page for 8 s from the moment the elements are routed, every 25 ms:
   // [ms, rms, element position, blocks sent to the bridge since the previous row, socket backlog]. A hole in the
   // sound that comes from the page shows as rms 0 (or a position that stands still); a hole that does not show here
   // is downstream (the bridge, Windows, the device).
   const LEVELS = (window.musicLevelLog = []);
   const RM = { on: false, blocks: 0 };
+
+  // ---- playback diagnostics: window.musicDiag --------------------------------------------------------------
+  // For "the music cuts out for a moment, or for seconds with chunks every couple of seconds" (user, 2026-11-08;
+  // suspected: the tab not in front while the machine is busy). Everything is collected quietly; the console gets
+  // at most one "[music-diag]" line every 5 s. When it happens: press Alt+G at once (marks the moment), then
+  //   musicDiag.summary()          a table per kind of event, with the usual spacing between repeats
+  //   copy(musicDiag.dump())       events + one snapshot per second for the last 5 min, to paste back
+  // Event kinds - the page's side of the bridge path:
+  //   tap-gap        the main thread got the next 21 ms block of audio late (ms; audioMs = how far apart the audio
+  //                  engine made them, so mainDelayMs = ms - audioMs is the main thread's delay)
+  //   tap-burst      several blocks arrived back to back after such a gap (the "chunk")
+  //   tap-audio-gap  the audio engine itself produced the blocks late (the browser's audio thread starved)
+  //   ws-backlog / ws-drop   the socket to the app holds unsent data / blocks were dropped
+  //   main-late      a 20 ms timer ran late: the page's main thread was busy or starved
+  //   longtask / long-frame   what kept it busy (long-frame names the script)
+  //   audio-*, pos-stalled, watch-*   the media element itself (data not arriving, position standing still)
+  // and the app's side (bridge 1.2.3+, once a second): bridge-underrun (its queue ran dry; queued_ms),
+  // bridge-recv-late (the page's blocks reached the app late), bridge-pull-late (Windows asked the app late).
+  // Every event carries hid: true when the tab was hidden or behind another window.
+  const DG = (() => {
+    const T0 = performance.now();
+    const ev = [], snaps = [];
+    const S = { blocks: 0, lastWall: 0, lastAud: -1, gapMax: 0, run: 0, lateMax: 0, bridge: null, bridgeAt: 0,
+      under: 0, lastPrint: 0, started: false };
+    const now = () => Math.round(performance.now() - T0);
+    // While the app's own log is on (tray menu "Log playback problems"; the app says so in its info message), the page
+    // writes its events into that file too, so both sides share one timeline. At most 30 lines a second.
+    let sentWin = 0, sentN = 0;
+    function toBridge(text) {
+      if (!(BR.ws && BR.ws.readyState === 1 && BR.info && BR.info.logging)) return;
+      const p = performance.now();
+      if (p - sentWin > 1000) { sentWin = p; sentN = 0; }
+      if (++sentN > 30) return;
+      bridgeSend({ type: 'log', line: text.replace(/["\\]/g, "'").slice(0, 400) });
+    }
+    const LOUDKINDS = /^(tap-|ws-|main-late|long-frame|bridge-|pos-stalled|audio-(waiting|stalled|error)|HEARD)/;
+    function add(k, x) {
+      ev.push(Object.assign({ t: now(), at: new Date().toISOString().slice(11, 23), k, hid: document.hidden }, x || {}));
+      if (ev.length > 1200) ev.shift();
+      if (k !== 'focus' && k !== 'blur') {
+        toBridge(k + (document.hidden ? ' [tab hidden]' : '') + ' ' + Object.entries(x || {}).map(([a, v]) => a + '=' + (v && typeof v === 'object' ? JSON.stringify(v) : v)).join(' '));
+      }
+      const p = performance.now();
+      if (LOUDKINDS.test(k) && p - S.lastPrint > 5000) {
+        S.lastPrint = p;
+        console.warn('[music-diag] ' + k + (x ? ' ' + JSON.stringify(x) : '') + (document.hidden ? ' (tab hidden)' : '')
+          + ' - musicDiag.summary(), copy(musicDiag.dump())');
+      }
+    }
+    // One block from the audio tap reached the main thread. audT = the audio engine's clock when it made it.
+    function tap(audT) {
+      const p = performance.now();
+      S.blocks++;
+      if (S.lastWall) {
+        const g = p - S.lastWall;
+        if (g > S.gapMax) S.gapMax = g;
+        const audMs = S.lastAud >= 0 && typeof audT === 'number' ? (audT - S.lastAud) * 1000 : null;
+        if (g > 80) add('tap-gap', { ms: Math.round(g), audioMs: audMs === null ? null : Math.round(audMs), mainDelayMs: audMs === null ? null : Math.round(g - audMs) });
+        if (audMs !== null && audMs > 45) add('tap-audio-gap', { audioMs: Math.round(audMs) });
+        if (g < 5) S.run++; else { if (S.run >= 3) add('tap-burst', { blocks: S.run + 1 }); S.run = 0; }
+      }
+      S.lastWall = p;
+      if (typeof audT === 'number') S.lastAud = audT;
+    }
+    // The app's once-a-second numbers.
+    function stats(m) {
+      S.bridge = m; S.bridgeAt = performance.now();
+      if (m.underruns > S.under) add('bridge-underrun', { n: m.underruns - S.under, total: m.underruns, queued_ms: m.queued_ms });
+      S.under = m.underruns;
+      if (m.recv_late > 0) add('bridge-recv-late', { n: m.recv_late, maxGapMs: m.recv_gap_max_ms });
+      if (m.pull_late > 0) add('bridge-pull-late', { n: m.pull_late, maxGapMs: m.pull_gap_max_ms });
+    }
+    const aheadOf = (el) => {
+      try {
+        for (let i = 0; i < el.buffered.length; i++) {
+          if (el.buffered.start(i) <= el.currentTime + 0.1 && el.buffered.end(i) >= el.currentTime) return +(el.buffered.end(i) - el.currentTime).toFixed(1);
+        }
+      } catch (e) { /* none */ }
+      return null;
+    };
+    // Called once the elements exist.
+    function start(getEl, els) {
+      if (S.started) return;
+      S.started = true;
+      let lt = performance.now();
+      setInterval(() => {
+        const p = performance.now(), late = p - lt - 20; lt = p;
+        if (late > S.lateMax) S.lateMax = late;
+        if (late > 60) add('main-late', { ms: Math.round(late) });
+      }, 20);
+      for (const type of ['longtask', 'long-animation-frame']) {
+        try {
+          new PerformanceObserver((l) => l.getEntries().forEach((e) => {
+            if (e.duration > (type === 'longtask' ? 50 : 80)) {
+              add(type === 'longtask' ? 'longtask' : 'long-frame', { ms: Math.round(e.duration),
+                scripts: (e.scripts || []).slice(0, 2).map((x) => ((x.sourceURL || '').split('/').pop() + ' ' + (x.invoker || '')).trim()) });
+            }
+          })).observe({ entryTypes: [type] });
+        } catch (e) { /* not supported */ }
+      }
+      for (const el of els) {
+        for (const e of ['waiting', 'stalled', 'emptied', 'error', 'pause', 'playing', 'seeking']) {
+          el.addEventListener(e, () => { if (el === getEl()) add('audio-' + e, { pos: +el.currentTime.toFixed(2), ahead: aheadOf(el) }); });
+        }
+      }
+      let lastPos = -1, lastAt = 0, stalled = 0;
+      setInterval(() => {
+        const el = getEl(), p = performance.now();
+        if (el && !el.paused && !document.hidden && el.readyState > 0) {
+          if (el.currentTime === lastPos) {
+            if (!stalled && p - lastAt > 300) { stalled = lastAt; add('pos-stalled', { pos: +lastPos.toFixed(2), ahead: aheadOf(el) }); }
+          } else {
+            if (stalled) { add('pos-moving', { stalledMs: Math.round(p - stalled) }); stalled = 0; }
+            lastPos = el.currentTime; lastAt = p;
+          }
+        } else { lastPos = -1; lastAt = p; stalled = 0; }
+      }, 100);
+      for (const [t, o] of [['visibilitychange', document], ['online', window], ['offline', window], ['focus', window], ['blur', window]]) o.addEventListener(t, () => add(t));
+      if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', () => add('devicechange'));
+      let lb = 0;
+      setInterval(() => {
+        const el = getEl(), c = LOUD.ctx;
+        if (BR.ws && BR.ws.readyState === 1 && BR.info && S.bridgeAt && /^(1\.2\.([3-9]|\d\d)|1\.[3-9]|[2-9]\.)/.test(String(BR.info.version || ''))
+            && performance.now() - S.bridgeAt > 3000) add('bridge-silent', { ms: Math.round(performance.now() - S.bridgeAt) });
+        snaps.push({ t: now(), pos: el ? +el.currentTime.toFixed(1) : null, ahead: el ? aheadOf(el) : null, blocks: S.blocks - lb,
+          tapGapMax: Math.round(S.gapMax), mainLateMax: Math.round(S.lateMax), wsBuf: BR.ws ? BR.ws.bufferedAmount : -1,
+          ctx: c ? c.state : 'none', outLat: c && c.outputLatency ? +c.outputLatency.toFixed(3) : null, hid: document.hidden,
+          bq: S.bridge ? S.bridge.queued_ms : null, bUnder: S.bridge ? S.bridge.underruns : null });
+        const last = snaps[snaps.length - 1];
+        if (snaps.length % 10 === 0) {
+          toBridge('snap pos=' + last.pos + ' ahead=' + last.ahead + ' blocks/s=' + last.blocks + ' tapGapMax=' + last.tapGapMax + ' mainLateMax=' + last.mainLateMax
+            + ' wsBuf=' + last.wsBuf + ' ctx=' + last.ctx + (last.hid ? ' [tab hidden]' : ''));
+        }
+        lb = S.blocks; S.gapMax = 0; S.lateMax = 0;
+        if (snaps.length > 300) snaps.shift();
+      }, 1000);
+      document.addEventListener('keydown', (e) => {
+        if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'g') { add('HEARD-IT'); console.info('[music-diag] marked at ' + now() + ' ms'); }
+      }, true);
+      if (LOUD.ctx) LOUD.ctx.addEventListener('statechange', () => add('ctx-' + LOUD.ctx.state));
+    }
+    window.musicDiag = {
+      mark: (text) => add('MARK', { text }),
+      dump: () => JSON.stringify({ ua: navigator.userAgent, now: now(), hidden: document.hidden,
+        route: { mode: UP.mode, heights: UP.heights, viaBridge: UP.viaBridge, layout: UP.layout && UP.layout.name },
+        bridge: BR.info ? { version: BR.info.version, device: BR.info.device, bed: BR.info.bed } : null,
+        ctx: LOUD.ctx ? { state: LOUD.ctx.state, rate: LOUD.ctx.sampleRate, base: LOUD.ctx.baseLatency, out: LOUD.ctx.outputLatency } : null,
+        events: ev, snaps, routeLog: RLOG.slice(-40) }),
+      summary: () => {
+        const by = {};
+        ev.forEach((e) => (by[e.k] = by[e.k] || []).push(e));
+        console.table(Object.entries(by).map(([k, es]) => {
+          const ts = es.map((e) => e.t), c = {};
+          ts.slice(1).forEach((t, i) => { const v = Math.round((t - ts[i]) / 50) * 50; c[v] = (c[v] || 0) + 1; });
+          const top = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
+          return { kind: k, count: es.length, hidden: es.filter((e) => e.hid).length, firstMs: ts[0], lastMs: ts[ts.length - 1],
+            commonGapMs: top ? top[0] : '', times: top ? top[1] : '' };
+        }));
+      },
+    };
+    return { add, tap, stats, start };
+  })();
   function startRouteMeter() {
     if (RM.on || !LOUD.ctx) return;
     RM.on = true;
@@ -817,7 +979,7 @@
       if (x && x[0]) {
         const l = x[0], r = x[1] || x[0];
         for (let k = 0; k < l.length; k++) { this.b[this.n++] = l[k]; this.b[this.n++] = r[k]; }
-        if (this.n >= 2048) { this.port.postMessage(this.b.slice(0, this.n)); this.n = 0; }
+        if (this.n >= 2048) { this.port.postMessage({ b: this.b.slice(0, this.n), t: currentTime }); this.n = 0; }
       }
       return true;
     }
@@ -862,6 +1024,7 @@
       if (typeof ev.data !== 'string') return;
       let msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.type === 'stats') { DG.stats(msg); return; }
       if (msg.type === 'info') {
         rlog('bridge: info', { bed: msg.bed, heights: msg.heights });
         BR.info = msg;
@@ -919,7 +1082,12 @@
       const node = new AudioWorkletNode(LOUD.ctx, 'ah-tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
       node.port.onmessage = (ev) => {
         RM.blocks++;
-        if (BR.ws && BR.ws.readyState === 1 && BR.ws.bufferedAmount < (1 << 20)) BR.ws.send(ev.data.buffer);
+        DG.tap(ev.data.t);
+        if (BR.ws && BR.ws.readyState === 1) {
+          if (BR.ws.bufferedAmount < (1 << 20)) BR.ws.send(ev.data.b.buffer);
+          else DG.add('ws-drop', { buffered: BR.ws.bufferedAmount });
+          if (BR.ws.bufferedAmount > 262144) DG.add('ws-backlog', { bytes: BR.ws.bufferedAmount });
+        }
       };
       BR.silent = LOUD.ctx.createGain();       // keeps the worklet pulled without making a sound
       BR.silent.gain.value = 0;
@@ -1921,7 +2089,11 @@
       };
     };
     window.musicWatchLog = WATCH.events;
-    const watchLog = (kind, extra) => console.warn('[music-watch] ' + kind, Object.assign(watchState(), extra || {}));
+    const watchLog = (kind, extra) => {
+      const w = watchState();
+      DG.add('watch-' + kind, Object.assign({ pos: w.pos, ahead: w.bufferedAheadS, longTasks: w.longTasksLast3s.length }, extra || {}));
+      console.warn('[music-watch] ' + kind, Object.assign(w, extra || {}));
+    };
     for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => { WATCH.lastInput = performance.now(); }, true);
     try {
       new PerformanceObserver((list) => {
@@ -1972,6 +2144,7 @@
         WATCH.clk = { wall: now, aud: c.currentTime };
       } else WATCH.clk = null;
     }, 250);
+    DG.start(() => mediaEl, [audio, videoEl]);
     // Time listened, for the charts (js/listen_time.js, vault KSF-052):
     // counted on whichever element carries the song, so its music video counts
     // as the song (user, 2026-09-24). Checked, not assumed: a cached
