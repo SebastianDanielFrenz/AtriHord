@@ -6,7 +6,7 @@ people, search, shares, trash, upload, a VR viewer, 2D→3D conversion and smoot
 **vision worker** tags, captions, OCRs, face-clusters and upscales the library.
 
 > Licence GPL-3.0-or-later. Read [`THIRD_PARTY.md`](THIRD_PARTY.md) first: some optional models are
-> **non-commercial only**, and smooth motion needs a proprietary DLL you must obtain yourself.
+> **non-commercial only**, and smooth motion needs a proprietary DLL from Lossless Scaling you must obtain yourself.
 
 ## What you need
 
