@@ -580,7 +580,7 @@
     RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
     if (RLOG.length > 300) RLOG.shift();
   }
-  console.info('[music] build 2026-11-08d (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
+  console.info('[music] build 2026-11-08e (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
   // The level of the signal inside the page for 8 s from the moment the elements are routed, every 25 ms:
   // [ms, rms, element position, blocks sent to the bridge since the previous row, socket backlog]. A hole in the
   // sound that comes from the page shows as rms 0 (or a position that stands still); a hole that does not show here
@@ -1038,6 +1038,7 @@
       if (m.t === 'claim' && (bridgeHeld() || !BR.stopped || BR.ws)) bridgeYield('claimed by another tab');
       else if (m.t === 'who' && bridgeHeld() && !mediaEl.paused) BR_BC.postMessage({ t: 'busy', id: BR_TAB });
       else if (m.t === 'busy') BR.busyOther = true;
+      else if (m.t === 'playing' && !mediaEl.paused) mediaEl.pause();      // another tab of this site started: this one pauses
     };
   }
   // First connection: ask whether another tab is playing through the app; if so stay out of its way.
@@ -2152,6 +2153,7 @@
         lastPos = pos;
       });
       el.addEventListener('play', () => {
+        if (BR_BC) BR_BC.postMessage({ t: 'playing', id: BR_TAB });       // the other tabs of this site pause
         if (BR.yielded) bridgeKick();         // playing here now: this tab takes the app back
         else if (bridgeHeld() && BR_BC) bridgeClaim();      // and tells the others it has it
         if (el !== mediaEl) { el.pause(); return; }
