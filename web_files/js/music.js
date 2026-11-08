@@ -580,7 +580,7 @@
     RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
     if (RLOG.length > 300) RLOG.shift();
   }
-  console.info('[music] build 2026-11-08f (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
+  console.info('[music] build 2026-11-08g (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
   // The level of the signal inside the page for 8 s from the moment the elements are routed, every 25 ms:
   // [ms, rms, element position, blocks sent to the bridge since the previous row, socket backlog]. A hole in the
   // sound that comes from the page shows as rms 0 (or a position that stands still); a hole that does not show here
@@ -1022,9 +1022,11 @@
     BR.stopped = true;
     BR.state = 'yielded';
     clearTimeout(BR.retry);
-    console.info('Bridge: another tab is using it, this tab plays through the browser (' + why + '). Press play, Heights or 7.1 here to take it back.');
+    console.info('Bridge: another tab is using it, this tab is paused (' + why + '). Press play, Heights or 7.1 here to take it back.');
     if (typeof DG !== 'undefined') DG.add('bridge-yield', { why });
     if (BR.ws) { try { BR.ws.close(); } catch (e) { /* already closed */ } }
+    // losing the app means this page stops: whoever has it now is the one playing
+    try { if (mediaEl && !mediaEl.paused) mediaEl.pause(); } catch (e) { /* no element yet */ }
   }
   function bridgeClaim() {
     BR.yielded = false;
@@ -1096,19 +1098,9 @@
     };
     const gone = (ev) => {
       if (BR.ws !== ws) return;
-      // Taken away again and again within seconds of connecting = another client keeps taking it (the 'replaced'
-      // notice may not arrive): stop fighting, like after a notice (user, 2026-11-08: 7.1.4 -> 7.1 every ~2 s).
-      if (!BR.yielded && BR.openAt) {
-        if (Date.now() - BR.openAt < 4000) BR.shortLives = (BR.shortLives || 0) + 1; else BR.shortLives = 0;
-        BR.openAt = 0;
-        if (BR.shortLives >= 2) {
-          BR.shortLives = 0;
-          BR.yielded = true; BR.stopped = true; BR.state = 'yielded';
-          clearTimeout(BR.retry);
-          console.info('Bridge: another client keeps taking it, this page plays through the browser. Press play, Heights or 7.1 to take it back.');
-          if (typeof DG !== 'undefined') DG.add('bridge-yield', { why: 'taken repeatedly' });
-        }
-      }
+      // Once it was up, a loss means another client has it (the 'replaced' notice may not have arrived) or the app quit:
+      // this page stops and does not re-claim by itself; only "the app is not there yet" is retried.
+      if (!BR.yielded && BR.openAt) { BR.openAt = 0; bridgeYield('the app connection ended'); }
       if (BR.yielded) {                       // let go on purpose: no warning, no retry; the browser plays again
         BR.ws = null;
         const had = BR.info;
