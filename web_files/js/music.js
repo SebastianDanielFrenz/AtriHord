@@ -580,7 +580,7 @@
     RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
     if (RLOG.length > 300) RLOG.shift();
   }
-  console.info('[music] build 2026-11-08e (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
+  console.info('[music] build 2026-11-08f (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
   // The level of the signal inside the page for 8 s from the moment the elements are routed, every 25 ms:
   // [ms, rms, element position, blocks sent to the bridge since the previous row, socket backlog]. A hole in the
   // sound that comes from the page shows as rms 0 (or a position that stands still); a hole that does not show here
@@ -1060,6 +1060,7 @@
 
   function bridgeConnect() {
     if (BR.ws || BR.stopped || IOS || !('WebSocket' in window)) return;
+    if (BR.holdOff && Date.now() < BR.holdOff) return;      // just lost it: the retry timer decides, not a rebuild
     if (!bridgeArbitrate()) return;
     if (!BR.windowStart) BR.windowStart = Date.now();
     let ws;
@@ -1069,6 +1070,7 @@
     ws.onopen = () => {
       BR.fails = 0;
       BR.windowStart = 0;
+      BR.openAt = Date.now();
       rlog('bridge: socket open');
       if (BR.state !== 'connected') console.info('Bridge connected at ' + BRIDGE_URL);
       BR.state = 'connected';
@@ -1094,6 +1096,19 @@
     };
     const gone = (ev) => {
       if (BR.ws !== ws) return;
+      // Taken away again and again within seconds of connecting = another client keeps taking it (the 'replaced'
+      // notice may not arrive): stop fighting, like after a notice (user, 2026-11-08: 7.1.4 -> 7.1 every ~2 s).
+      if (!BR.yielded && BR.openAt) {
+        if (Date.now() - BR.openAt < 4000) BR.shortLives = (BR.shortLives || 0) + 1; else BR.shortLives = 0;
+        BR.openAt = 0;
+        if (BR.shortLives >= 2) {
+          BR.shortLives = 0;
+          BR.yielded = true; BR.stopped = true; BR.state = 'yielded';
+          clearTimeout(BR.retry);
+          console.info('Bridge: another client keeps taking it, this page plays through the browser. Press play, Heights or 7.1 to take it back.');
+          if (typeof DG !== 'undefined') DG.add('bridge-yield', { why: 'taken repeatedly' });
+        }
+      }
       if (BR.yielded) {                       // let go on purpose: no warning, no retry; the browser plays again
         BR.ws = null;
         const had = BR.info;
@@ -1106,6 +1121,7 @@
       if (BR.state === 'connected') { console.warn('Bridge connection lost. Attempting to reconnect.'); BR.state = 'lost'; }
       else if (!BR.state) { console.warn('Bridge not reachable at ' + BRIDGE_URL + ' (app not running, or the browser blocked local network access for this site)'); BR.state = 'unreachable'; }
       BR.fails = (BR.fails || 0) + 1;
+      BR.holdOff = Date.now() + BRIDGE_TRY_MS - 200;
       BR.ws = null;
       const had = BR.info;
       BR.info = null;
