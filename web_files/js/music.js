@@ -580,7 +580,7 @@
     RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
     if (RLOG.length > 300) RLOG.shift();
   }
-  console.info('[music] build 2026-11-08b (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
+  console.info('[music] build 2026-11-08c (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
   // The level of the signal inside the page for 8 s from the moment the elements are routed, every 25 ms:
   // [ms, rms, element position, blocks sent to the bridge since the previous row, socket backlog]. A hole in the
   // sound that comes from the page shows as rms 0 (or a position that stands still); a hole that does not show here
@@ -1002,11 +1002,64 @@
     if (!BR.stopped || BR.ws) return;
     BR.stopped = false;
     BR.windowStart = Date.now();
+    if (BR.yielded) bridgeClaim();
     bridgeConnect();
+  }
+
+  // ---- one tab at a time ------------------------------------------------------------------------------------
+  // The app serves one page at a time: a second page's connection replaces the first's, whose retry then replaces
+  // it again (user, 2026-11-08: tabs fighting over the app, a reconnect every second or so, cut-outs each time). So
+  // the tabs agree who has it, over a BroadcastChannel: a tab that starts playing (or whose Heights/7.1 button is
+  // pressed) CLAIMS the app and every other tab lets go and stays on the browser's own output until it claims it
+  // back; a tab that opens while another one is playing through the app does not take it.
+  const BR_TAB = Math.random().toString(36).slice(2);
+  let BR_BC = null;
+  try { BR_BC = new BroadcastChannel('ksf-spatial-bridge'); } catch (e) { /* no channel: tabs behave as before */ }
+  function bridgeHeld() { return !!(BR.ws && BR.ws.readyState === 1); }
+  function bridgeYield(why) {
+    if (BR.yielded) return;
+    BR.yielded = true;
+    BR.stopped = true;
+    BR.state = 'yielded';
+    clearTimeout(BR.retry);
+    console.info('Bridge: another tab is using it, this tab plays through the browser (' + why + '). Press play, Heights or 7.1 here to take it back.');
+    if (typeof DG !== 'undefined') DG.add('bridge-yield', { why });
+    if (BR.ws) { try { BR.ws.close(); } catch (e) { /* already closed */ } }
+  }
+  function bridgeClaim() {
+    BR.yielded = false;
+    if (BR_BC) BR_BC.postMessage({ t: 'claim', id: BR_TAB });
+    if (typeof DG !== 'undefined') DG.add('bridge-claim', {});
+  }
+  if (BR_BC) {
+    BR_BC.onmessage = (ev) => {
+      const m = ev.data || {};
+      if (m.id === BR_TAB) return;
+      if (m.t === 'claim' && (bridgeHeld() || !BR.stopped || BR.ws)) bridgeYield('claimed by another tab');
+      else if (m.t === 'who' && bridgeHeld() && !mediaEl.paused) BR_BC.postMessage({ t: 'busy', id: BR_TAB });
+      else if (m.t === 'busy') BR.busyOther = true;
+    };
+  }
+  // First connection: ask whether another tab is playing through the app; if so stay out of its way.
+  function bridgeArbitrate() {
+    if (BR.arbDone) return true;
+    if (!BR_BC) { BR.arbDone = true; return true; }
+    if (!BR.arbPending) {
+      BR.arbPending = true;
+      BR_BC.postMessage({ t: 'who', id: BR_TAB });
+      setTimeout(() => {
+        BR.arbDone = true;
+        BR.arbPending = false;
+        if (BR.busyOther) bridgeYield('another tab is playing through it');
+        else bridgeConnect();
+      }, 250);
+    }
+    return false;
   }
 
   function bridgeConnect() {
     if (BR.ws || BR.stopped || IOS || !('WebSocket' in window)) return;
+    if (!bridgeArbitrate()) return;
     if (!BR.windowStart) BR.windowStart = Date.now();
     let ws;
     try { ws = new WebSocket(BRIDGE_URL); } catch (e) { console.warn('[music-bridge] cannot open', BRIDGE_URL, e); return; }
@@ -1039,6 +1092,13 @@
     };
     const gone = (ev) => {
       if (BR.ws !== ws) return;
+      if (BR.yielded) {                       // let go on purpose: no warning, no retry; the browser plays again
+        BR.ws = null;
+        const had = BR.info;
+        BR.info = null;
+        if (had) { if (LOUD.ctx && UP.input) buildUpmix(); else renderSurround(); }
+        return;
+      }
       // One line per change of state, not per attempt. (The browser itself prints a red "WebSocket connection
       // failed" for every refused attempt; page code cannot silence that, so the attempts are limited instead.)
       if (BR.state === 'connected') { console.warn('Bridge connection lost. Attempting to reconnect.'); BR.state = 'lost'; }
@@ -2091,6 +2151,8 @@
         lastPos = pos;
       });
       el.addEventListener('play', () => {
+        if (BR.yielded) bridgeKick();         // playing here now: this tab takes the app back
+        else if (bridgeHeld() && BR_BC) bridgeClaim();      // and tells the others it has it
         if (el !== mediaEl) { el.pause(); return; }
         startLoudness();
         updatePlayButton();
@@ -4352,7 +4414,7 @@
     // A disabled button gets no hover events, and Heights is disabled exactly when the bridge is missing, so
     // while the page has given up the pointer is checked against the two buttons' rectangles instead.
     document.addEventListener('pointermove', (e) => {
-      if (!BR.stopped || BR.ws) return;
+      if (!BR.stopped || BR.ws || BR.yielded) return;
       for (const id of ['muHeights', 'muSurround']) {
         const r = $(id).getBoundingClientRect();
         if (r.width && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { bridgeKick(); return; }
