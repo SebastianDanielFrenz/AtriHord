@@ -66,6 +66,10 @@ function applyMediaSizing(el, nativeWidth, nativeHeight) {
   currentPreviewNativeW = nativeWidth;
   currentPreviewNativeH = nativeHeight;
 
+  if (!el._picture && (el._turn || el._turned)) {
+    if (sizeTurnedVideo(el, nativeWidth, nativeHeight)) return;
+  }
+
   if (document.fullscreenElement && !el._picture) {
     // Real fullscreen is uncapped - fill the screen however far that
     // scales. Clearing every inline size hands sizing over to the
@@ -87,6 +91,54 @@ function applyMediaSizing(el, nativeWidth, nativeHeight) {
   el.style.maxHeight = Math.min(nativeHeight * MAX_UPSCALE, window.innerHeight) + 'px';
   pinUpscaledSize(el);
   refreshDisplayedSize();
+}
+
+// A video whose picture lies on its side is shown turned: el._turn is how far,
+// in degrees clockwise (js/rotate.js sets it from the listing's f.rotate). A
+// CSS transform does not move the layout box, so for a quarter turn the player
+// wrap is given the UPRIGHT shape - its control bar then runs along the bottom
+// of the picture as seen - and the video inside keeps its stored shape,
+// centred and turned about its middle. Sized here in px, in fullscreen too
+// (uncapped there), since the fullscreen rules' 100% would size the box the
+// wrong way round. A half turn changes no size and only adds the transform.
+// Returns true when it sized the video; false hands back to the normal sizing,
+// after undoing what an earlier turn of this same element set.
+function sizeTurnedVideo(el, nativeWidth, nativeHeight) {
+  const turn = ((el._turn || 0) % 360 + 360) % 360;
+  const wrap = el.closest('.media-player-wrap');
+  if (turn !== 90 && turn !== 270) {
+    el._turned = false;
+    for (const prop of ['position', 'left', 'top', 'transform']) el.style[prop] = '';
+    if (wrap) {
+      wrap.style.width = '';
+      wrap.style.height = '';
+      wrap.classList.remove('turned');
+    }
+    if (turn === 180) {
+      el._turned = true;
+      el.style.transform = 'rotate(180deg)';
+    }
+    return false;
+  }
+  if (!wrap || !nativeWidth || !nativeHeight) return false;
+  el._turned = true;
+  const full = !!document.fullscreenElement;
+  // What is seen is nativeHeight wide and nativeWidth tall.
+  let scale = Math.min(window.innerWidth / nativeHeight, window.innerHeight / nativeWidth);
+  if (!full) scale = Math.min(scale, MAX_UPSCALE);
+  wrap.classList.add('turned');
+  wrap.style.width = `${nativeHeight * scale}px`;
+  wrap.style.height = `${nativeWidth * scale}px`;
+  el.style.position = 'absolute';
+  el.style.left = '50%';
+  el.style.top = '50%';
+  el.style.width = `${nativeWidth * scale}px`;
+  el.style.height = `${nativeHeight * scale}px`;
+  el.style.maxWidth = 'none';
+  el.style.maxHeight = 'none';
+  el.style.transform = `translate(-50%, -50%) rotate(${turn}deg)`;
+  refreshDisplayedSize();
+  return true;
 }
 
 // A live-upscaled swap (media.js) must keep the size the ORIGINAL had on
@@ -169,6 +221,9 @@ function clearPreviewBody() {
     body._zoomHandlers = null;
   }
   previewEnhancements = [];          // they described what was just removed
+  // The turn chip (js/rotate.js) belongs to the item that was just removed.
+  const turnChip = document.getElementById('mediaTurnChip');
+  if (turnChip) turnChip.remove();
 }
 
 // -------------------------------------------------------------------

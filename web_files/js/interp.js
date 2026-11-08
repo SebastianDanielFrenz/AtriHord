@@ -819,6 +819,10 @@ async function renderPlayerSettings(menu, video) {
   };
   const rerender = () => renderPlayerSettings(menu, video);
 
+  // How far a video filmed sideways is turned (js/rotate.js). First, because
+  // the turn chip in the preview header opens this menu to change it.
+  if (typeof renderTurnSettings === 'function') renderTurnSettings(menu, video, heading, note, rerender);
+
   heading('Smooth motion');
   menu.appendChild(segmentedChoice([['Off', false], ['On', true]], smoothMotionWanted(), (on) => {
     storeSetting(SMOOTH_MOTION_KEY, on ? '1' : '0');

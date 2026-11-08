@@ -393,6 +393,8 @@ function openPreview(f, previewList = activePreviewList, { push = true } = {}) {
     video.autoplay = true;
     video.loop = true;
     video.style.opacity = '0';
+    // A video filmed sideways is shown turned, as in the library (player.js).
+    video._turn = f.rotate || 0;
     video.addEventListener('loadedmetadata', () => {
       applyMediaSizing(video, video.videoWidth, video.videoHeight);
       video.style.opacity = '1';

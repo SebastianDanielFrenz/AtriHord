@@ -193,13 +193,22 @@ function showContextMenu(x, y, item) {
         // synchronous inside the click handler, so it can't be rejected
         // for having lost the user-activation that permits clipboard use.
         try {
-          navigator.clipboard
-            .write([new ClipboardItem({ 'image/png': imageAsPngBlob(item.url) })])
-            .catch(() => {});
+          if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+            throw new Error('Image clipboard is not supported by this browser.');
+          }
+          const write = navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': imageAsPngBlob(item.url) }),
+          ]);
+          hideContextMenu();
+          write.then(
+            () => showMediaToast('Image copied to clipboard.'),
+            () => showMediaToast('Could not copy image. Check clipboard permission and try again.'),
+          );
         } catch (e) {
-          // Older browsers without ClipboardItem/promise support.
+          showMediaToast(e && e.message === 'Image clipboard is not supported by this browser.'
+            ? e.message : 'Could not copy image. Check clipboard permission and try again.');
+          hideContextMenu();
         }
-        hideContextMenu();
       });
     }
 
@@ -943,7 +952,8 @@ function thumbnailUrlFor(f) {
   // them - but the URL has to change when the file does, or a regenerated
   // thumbnail stays invisible until the cache expires and the only fix is
   // clearing it by hand. The source's mtime is exactly that key.
-  const version = Math.floor(f.mtime || 0);
+  // The turn too: a sideways video's thumbnail is made turned (js/rotate.js).
+  const version = Math.floor(f.mtime || 0) + (f.rotate ? `r${f.rotate}` : '');
   return `/api/media/thumbnail?path=${encodeURIComponent(f.path)}&root=${encodeURIComponent(root)}&v=${version}`;
 }
 
@@ -4881,6 +4891,8 @@ function openMediaPreview(f, previewList = currentFilesList, { push = true } = {
     video.autoplay = true;
     video.loop = true;
     video.style.opacity = '0';
+    // A video filmed sideways is shown turned (js/rotate.js; player.js sizes it).
+    video._turn = f.rotate || 0;
     video.addEventListener('loadedmetadata', () => {
       if (!stillShown()) return;       // previewBuild: the next item's size is not this one's
       applyMediaSizing(video, video.videoWidth, video.videoHeight);
@@ -4898,6 +4910,7 @@ function openMediaPreview(f, previewList = currentFilesList, { push = true } = {
     attachContextMenu(video, () => f);
     trackPreviewListening(video, f);
     body.appendChild(wrapWithCustomControls(video, { extras: smooth ? [playerSettingsButton(video)] : [] }));
+    if (typeof startPreviewTurn === 'function') startPreviewTurn(video, f);
   } else if (f.type === 'audio') {
     // A track with an embedded cover is played through a <video> element
     // with the art as its poster instead of <audio>, so it gets sized and

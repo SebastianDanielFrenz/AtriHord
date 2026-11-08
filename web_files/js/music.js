@@ -580,7 +580,7 @@
     RLOG.push(Object.assign({ ms: Math.round(performance.now()), ev }, x || {}));
     if (RLOG.length > 300) RLOG.shift();
   }
-  console.info('[music] build 2026-11-08a (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
+  console.info('[music] build 2026-11-08b (musicRouteLog = audio timeline, musicLevelLog = signal level after the first start, musicDiag = cuts: press Alt+G when you hear one)');
   // The level of the signal inside the page for 8 s from the moment the elements are routed, every 25 ms:
   // [ms, rms, element position, blocks sent to the bridge since the previous row, socket backlog]. A hole in the
   // sound that comes from the page shows as rms 0 (or a position that stands still); a hole that does not show here
@@ -1588,6 +1588,62 @@
     return `/api/media/file?root=${encodeURIComponent(s.root)}&path=${encodeURIComponent(s.path)}`;
   }
 
+  // ---- the next song, fetched whole in advance ---------------------------------------------------------------
+  // A song is normally streamed: the element asks the server for it piece by piece while it plays, so the whole song
+  // depends on the server answering steadily. When the server is thrashing (user, 2026-11-08: the music cuts out
+  // for 0.4-3 s, plays a chunk, cuts out again, for 30-120 s at a time; the console showed six "waiting" events in a
+  // row on one song, and the host was out of swap with a load average near 40), every piece is a chance to stall.
+  // So a little after a song starts, the NEXT one in the queue is downloaded completely, into memory, and played from
+  // there when its turn comes: nothing about it depends on the server any more. The song that was picked by hand (or
+  // skipped to) has no copy yet and streams as before.
+  // Kept: at most PRE_MAX songs and PRE_BYTES in all, never the one the element is playing, never one over PRE_ONE.
+  const PRE = { map: new Map(), inflight: new Set(), timer: 0 };
+  const PRE_MAX = 4, PRE_BYTES = 160 << 20, PRE_ONE = 80 << 20;
+  const preKey = (s) => s.root + '\u0000' + s.path;
+  function preUrl(s) {
+    const e = s && PRE.map.get(preKey(s));
+    return e ? e.url : null;
+  }
+  function preEvict() {
+    let total = 0;
+    for (const e of PRE.map.values()) total += e.size;
+    for (const [k, e] of PRE.map) {
+      if (PRE.map.size <= PRE_MAX && total <= PRE_BYTES) break;
+      if (audio.src === e.url || audio.currentSrc === e.url) continue;     // never the one that is playing
+      PRE.map.delete(k);
+      total -= e.size;
+      URL.revokeObjectURL(e.url);
+    }
+  }
+  async function prefetchSong(s) {
+    if (!s || !s.root || !s.path || (typeof wantVideo !== 'undefined' && wantVideo && s.video)) return;
+    const k = preKey(s);
+    if (PRE.map.has(k) || PRE.inflight.has(k)) return;
+    PRE.inflight.add(k);
+    const t0 = performance.now();
+    try {
+      const res = await fetch(fileUrl(s), { credentials: 'same-origin' });
+      const len = Number(res.headers.get('content-length')) || 0;
+      if (!res.ok || len > PRE_ONE) { DG.add('prefetch-skip', { why: res.ok ? 'size ' + Math.round(len / 1048576) + ' MB' : 'HTTP ' + res.status }); return; }
+      const blob = await res.blob();
+      if (blob.size > PRE_ONE) return;
+      PRE.map.set(k, { url: URL.createObjectURL(blob), size: blob.size, at: Date.now() });
+      DG.add('prefetch-done', { ms: Math.round(performance.now() - t0), mb: +(blob.size / 1048576).toFixed(1), title: String(s.title || '').slice(0, 40) });
+      preEvict();
+    } catch (e) {
+      DG.add('prefetch-fail', { ms: Math.round(performance.now() - t0), why: String(e && e.message || e).slice(0, 60) });
+    } finally {
+      PRE.inflight.delete(k);
+    }
+  }
+  function prefetchNext() {
+    if (!Q.items.length || Q.pos < 0) return;
+    let i = Q.pos + 1;
+    if (i >= Q.items.length) { if (Q.repeat === 'all') i = 0; else return; }
+    prefetchSong(LIB.songs[Q.items[i]]);
+  }
+  window.musicPrefetch = { has: (s) => !!preUrl(s), cached: () => [...PRE.map.values()].map((e) => ({ mb: +(e.size / 1048576).toFixed(1), at: new Date(e.at).toISOString().slice(11, 19) })) };
+
   function shuffled(list) {
     const a = list.slice();
     for (let i = a.length - 1; i > 0; i--) {
@@ -1735,7 +1791,11 @@
     }
     useElement(audio);
     stopVideo();
-    audio.src = fileUrl(s);
+    const cached = preUrl(s);
+    audio.src = cached || fileUrl(s);
+    DG.add('track-start', { from: cached ? 'memory' : 'stream', title: String(s.title || '').slice(0, 40) });
+    clearTimeout(PRE.timer);
+    PRE.timer = setTimeout(prefetchNext, 1500);         // once this song is under way: the one after it
     if (at) {
       audio.addEventListener('loadedmetadata', () => { try { audio.currentTime = at; } catch (e) { /* not seekable yet */ } }, { once: true });
     }
