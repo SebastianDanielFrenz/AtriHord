@@ -1312,6 +1312,14 @@
     }
   }
 
+  // What is actually played, named by its ear-level speakers and heights: the LFE stays silent and the heights only play
+  // with their switch, so a 7.1.4 device with the heights off reads "7.0" and with them on "7.0.4" (5.0 / 7.0 / 9.0 ...).
+  function playedName(bed, heights) {
+    const m = /^(\d+)\.\d+(?:\.(\d+))?$/.exec(String(bed || ''));
+    if (!m) return String(bed || '');
+    return `${m[1]}.0` + (heights && m[2] && +m[2] > 0 ? `.${m[2]}` : '');
+  }
+
   // The output button (stereo <-> all ear-level) and the Heights switch, in the player bar.
   function renderSurround() {
     const chip = $('muSurround');
@@ -1325,12 +1333,12 @@
     const multi = viaApp || !!lay;
     chip.hidden = false;
     btn.hidden = false;
-    const name = viaApp ? (BR.info.bed || 'Spatial') : lay ? lay.name : '';
+    const name = viaApp ? (BR.info.bed ? playedName(BR.info.bed, UP.heights) : 'Spatial') : lay ? playedName(lay.name, UP.heights) : '';
     chip.disabled = !multi;
     chip.setAttribute('aria-pressed', String(multi && UP.mode === 'all'));
     chip.textContent = !multi ? (UP.probed === 1 ? 'Mono' : 'Stereo') : (UP.mode === 'all' ? `${name} all` : 'Stereo');
     chip.title = viaApp ? `Playing through the companion app (${BR.info.device || 'Windows Spatial Sound'}). Click: ${UP.mode === 'all' ? 'front pair only' : 'every ear-level speaker'}`
-      : lay ? `Output: ${lay.name}. Click: ${UP.mode === 'all' ? 'stereo, the front pair only' : 'every ear-level speaker, at the same level'}`
+      : lay ? `Output: ${playedName(lay.name, UP.heights)}. Click: ${UP.mode === 'all' ? 'stereo, the front pair only' : 'every ear-level speaker, at the same level'}`
         : IOS || LOUD.off ? 'This browser plays stereo only'
           : 'Output: stereo - the music plays as it is';
     const can = viaApp ? !!BR.info.heights : !!lay && lay.tops.length > 0;
@@ -1477,7 +1485,7 @@
       g.fillText(name, x, y + (p.top ? 22 : 28));
     }
     $('muSpkInfo').textContent = !ok ? 'Play something to see the speakers'
-      : `${bed || 'Stereo'} - ${UP.mode === 'all' ? (UP.heights ? 'every speaker, heights on' : 'every ear-level speaker') : 'front pair only'}`
+      : `${playedName(bed, UP.mode === 'all' && UP.heights) || 'Stereo'} - ${UP.mode === 'all' ? (UP.heights ? 'every speaker, heights on' : 'every ear-level speaker') : 'front pair only'}`
         + (bridgeActive() ? ' - via the Spatial app' : '');
     SPK.raf = requestAnimationFrame(spkDraw);
   }
