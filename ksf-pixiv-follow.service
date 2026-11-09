@@ -1,0 +1,19 @@
+# User unit: ~/.config/systemd/user/ksf-pixiv-follow.service on the media VM.
+# Linger is on for bsod, so it starts at boot without a login.
+#   systemctl --user daemon-reload && systemctl --user enable --now ksf-pixiv-follow.service
+[Unit]
+Description=KSF media-dl pixiv follow sync (backfill + new works of followed artists)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/data2/ksf_web_dl
+# PixivUtil2's venv: it has curl_cffi, which pixiv's reads need.
+ExecStart=/data2/ksf_web_dl/PixivUtil2/pixiv_venv/bin/python -u /data2/ksf_web_dl/pixiv_follow_sync.py run
+Restart=always
+RestartSec=60
+# A follow-list read is ~45 paged requests; let it finish its tick on stop.
+TimeoutStopSec=300
+Nice=10
+
+[Install]
+WantedBy=default.target
