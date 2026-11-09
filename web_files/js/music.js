@@ -1355,7 +1355,7 @@
     const name = viaApp ? (BR.info.bed ? playedName(BR.info.bed, UP.heights) : 'Spatial') : lay ? playedName(lay.name, UP.heights) : '';
     chip.disabled = !multi;
     chip.setAttribute('aria-pressed', String(multi && UP.mode === 'all'));
-    chip.textContent = !multi ? (UP.probed === 1 ? 'Mono' : 'Stereo') : (UP.mode === 'all' ? `${name} all` : 'Stereo');
+    chip.textContent = !multi ? (UP.probed === 1 ? 'Mono' : 'Stereo') : (UP.mode === 'all' ? name : 'Stereo');
     chip.title = viaApp ? `Playing through the companion app (${BR.info.device || 'Windows Spatial Sound'}). Click: ${UP.mode === 'all' ? 'front pair only' : 'every ear-level speaker'}`
       : lay ? `Output: ${playedName(lay.name, UP.heights)}. Click: ${UP.mode === 'all' ? 'stereo, the front pair only' : 'every ear-level speaker, at the same level'}`
         : IOS || LOUD.off ? 'This browser plays stereo only'
