@@ -13829,20 +13829,98 @@ def public_share_asset(relative_path):
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 
-# Download of the companion app (a separate project, see README). Served from web_files/app/ when this server hosts
-# it; otherwise MEDIA_BRIDGE_DOWNLOAD_URL (for example the project's GitHub releases page) is the target; with
-# neither, the music page hides its "Spatial app" link instead of offering a dead one.
+# Download of the companion app (a separate project, see README) and the files its self-update reads. By default
+# (MEDIA_BRIDGE_SOURCE=github) this server serves the newest GitHub release of the project: it reads latest.json from
+# https://github.com/<MEDIA_BRIDGE_GITHUB_REPO>/releases/latest/download/ (at most every 10 minutes), downloads the exe
+# when the version changed, checks size and SHA-256 against that manifest and keeps both in web_files/app/spatial-bridge-cache/.
+# Nothing has to be copied by hand after a release. If GitHub cannot be reached the last cached copy is served.
+# MEDIA_BRIDGE_SOURCE=local serves web_files/app/spatial-bridge/ instead (own signed build; files placed by hand), and
+# MEDIA_BRIDGE_DOWNLOAD_URL is the redirect target when the chosen source has no exe; with neither, the music page
+# hides its "Spatial app" link instead of offering a dead one.
 BRIDGE_DOWNLOAD_URL = os.environ.get("MEDIA_BRIDGE_DOWNLOAD_URL", "").strip()
-BRIDGE_EXE = os.path.join(WEB_FILES_DIR, "app", "spatial-bridge", "ksf-spatial-bridge.exe")
+BRIDGE_SOURCE = os.environ.get("MEDIA_BRIDGE_SOURCE", "github").strip().lower()
+BRIDGE_GITHUB_REPO = os.environ.get("MEDIA_BRIDGE_GITHUB_REPO", "SebastianDanielFrenz/AtriBridge").strip()
+SPATIAL_BRIDGE_DIR = os.path.join(WEB_FILES_DIR, "app", "spatial-bridge")
+SPATIAL_BRIDGE_CACHE_DIR = os.path.join(WEB_FILES_DIR, "app", "spatial-bridge-cache")
+SPATIAL_BRIDGE_FILES = {"latest.json", "ksf-spatial-bridge.exe"}
+BRIDGE_EXE_MAX_BYTES = 20 * 1024 * 1024
+_bridge_gh_lock = threading.Lock()
+_bridge_gh_checked = 0.0
+
+
+def _bridge_cache_valid(directory):
+    """The manifest in `directory` and an exe whose size and SHA-256 match it: its version, else None."""
+    try:
+        with open(os.path.join(directory, "latest.json"), encoding="utf-8") as f:
+            m = json.load(f)
+        with open(os.path.join(directory, "ksf-spatial-bridge.exe"), "rb") as f:
+            data = f.read(BRIDGE_EXE_MAX_BYTES + 1)
+        if (re.fullmatch(r"\d+\.\d+\.\d+", str(m.get("version", ""))) and len(data) == m.get("size")
+                and hashlib.sha256(data).hexdigest() == str(m.get("sha256", "")).lower()):
+            return str(m["version"])
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    return None
+
+
+def _bridge_files_dir():
+    """The folder the bridge's files are served from: the verified GitHub cache (refreshed from the newest release when
+    the last look is over 10 minutes old), the hand-placed folder with MEDIA_BRIDGE_SOURCE=local, or None."""
+    global _bridge_gh_checked
+    if BRIDGE_SOURCE == "local":
+        return SPATIAL_BRIDGE_DIR if os.path.isfile(os.path.join(SPATIAL_BRIDGE_DIR, "ksf-spatial-bridge.exe")) else None
+    with _bridge_gh_lock:
+        have = _bridge_cache_valid(SPATIAL_BRIDGE_CACHE_DIR)
+        if have and time.time() - _bridge_gh_checked < 600:
+            return SPATIAL_BRIDGE_CACHE_DIR
+        base = "https://github.com/%s/releases/latest/download/" % BRIDGE_GITHUB_REPO
+        try:
+            req = urllib.request.Request(base + "latest.json", headers={"User-Agent": "atrihord"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                raw = r.read(65537)
+            m = json.loads(raw.decode("utf-8"))
+            ver = str(m.get("version", ""))
+            size = int(m.get("size"))
+            sha = str(m.get("sha256", "")).lower()
+            if not (re.fullmatch(r"\d+\.\d+\.\d+", ver) and re.fullmatch(r"[0-9a-f]{64}", sha) and 0 < size <= BRIDGE_EXE_MAX_BYTES):
+                raise ValueError("unusable manifest")
+            if have != ver:
+                req = urllib.request.Request(base + "ksf-spatial-bridge.exe", headers={"User-Agent": "atrihord"})
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    exe = r.read(BRIDGE_EXE_MAX_BYTES + 1)
+                if len(exe) != size or hashlib.sha256(exe).hexdigest() != sha:
+                    raise ValueError("the downloaded exe does not match the manifest")
+                os.makedirs(SPATIAL_BRIDGE_CACHE_DIR, exist_ok=True)
+                # the exe first: a manifest never points at a file that is not there
+                for name, blob in (("ksf-spatial-bridge.exe", exe), ("latest.json", raw)):
+                    tmp = os.path.join(SPATIAL_BRIDGE_CACHE_DIR, name + ".tmp")
+                    with open(tmp, "wb") as f:
+                        f.write(blob)
+                    os.replace(tmp, os.path.join(SPATIAL_BRIDGE_CACHE_DIR, name))
+                print("spatial bridge: cached release %s from GitHub" % ver, flush=True)
+            _bridge_gh_checked = time.time()
+        except Exception as e:
+            print("spatial bridge: GitHub release not refreshed (%s)" % e, flush=True)
+            _bridge_gh_checked = time.time() - 540          # retry in a minute
+        return SPATIAL_BRIDGE_CACHE_DIR if _bridge_cache_valid(SPATIAL_BRIDGE_CACHE_DIR) else None
 
 
 @app.route("/app/ksf-spatial-bridge.exe", methods=["GET", "HEAD"])
 def spatial_bridge_download():
-    """The same exe the self-update serves (web_files/app/spatial-bridge/), as a download for the music page."""
+    """The newest bridge exe as a download for the music page; the saved file carries the version."""
     if not get_authenticated_user():
         return login_redirect_for(request.url)
-    if os.path.isfile(BRIDGE_EXE):
-        return send_from_directory(os.path.dirname(BRIDGE_EXE), "ksf-spatial-bridge.exe", as_attachment=True)
+    folder = _bridge_files_dir()
+    if folder:
+        name = "ksf-spatial-bridge.exe"
+        try:
+            with open(os.path.join(folder, "latest.json"), encoding="utf-8") as f:
+                ver = str(json.load(f).get("version", ""))
+            if re.fullmatch(r"\d+\.\d+\.\d+", ver):
+                name = "ksf-spatial-bridge-%s.exe" % ver
+        except (OSError, ValueError):
+            pass
+        return send_from_directory(folder, "ksf-spatial-bridge.exe", as_attachment=True, download_name=name)
     if BRIDGE_DOWNLOAD_URL.startswith("https://"):
         return redirect(BRIDGE_DOWNLOAD_URL)
     return "404 Not Found", 404
@@ -13853,18 +13931,17 @@ def spatial_bridge_download_old_link():
     return redirect("/app/ksf-spatial-bridge.exe")
 
 
-SPATIAL_BRIDGE_DIR = os.path.join(WEB_FILES_DIR, "app", "spatial-bridge")
-SPATIAL_BRIDGE_FILES = {"latest.json", "ksf-spatial-bridge.exe"}
-
-
 @app.route("/api/public/spatial-bridge/<name>", methods=["GET"])
 def spatial_bridge_update_file(name):
-    """The companion app's self-update reads latest.json (version, sha256, signature) and the exe from here.
-    No login: the app cannot sign in, and it accepts nothing that is not signed with the maintainer's key.
-    Exactly two file names are served, from one folder."""
+    """The companion app's self-update (versions up to 1.2.5 use this server, later ones read GitHub directly) reads
+    latest.json (version, sha256, signature) and the exe from here. No login: the app cannot sign in, and it accepts
+    nothing that is not signed with the maintainer's key. Exactly two file names are served, from one folder."""
     if name not in SPATIAL_BRIDGE_FILES:
         return "404 Not Found", 404
-    resp = send_from_directory(SPATIAL_BRIDGE_DIR, name)
+    folder = _bridge_files_dir()
+    if not folder:
+        return "404 Not Found", 404
+    resp = send_from_directory(folder, name)
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 
