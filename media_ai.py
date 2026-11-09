@@ -65,7 +65,8 @@ SCHEMA_VERSION = 1
 
 # What a row was produced by, so a model upgrade can re-do only what it needs
 # to rather than the whole library.
-MODEL_KEYS = ("caption_model", "ocr_model", "tag_model", "face_model", "genre_model")
+MODEL_KEYS = ("caption_model", "ocr_model", "tag_model", "face_model", "genre_model",
+              "orient_model")
 
 _local = threading.local()
 
@@ -103,7 +104,14 @@ def _add_column(conn, table, column, decl):
     """
     have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
     if column not in have:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        except sqlite3.OperationalError as exc:
+            # Another connection (the server is threaded) added it between the
+            # look and the ALTER: the column is there, which is all this wants.
+            # Seen on the first start with the orient columns (2026-11-08).
+            if "duplicate column" not in str(exc):
+                raise
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -166,7 +174,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
       -- coordinates, so a crop has to reproduce both to land on the face.
       -- NULL for a still image, where the detector saw the original.
       frame_ts   REAL,
-      frame_w    INTEGER
+      frame_w    INTEGER,
+      -- Degrees clockwise the frame was turned upright BEFORE it was scaled
+      -- and detected (a video filmed sideways, KSF-075). NULL/0 = as decoded.
+      frame_turn INTEGER
     );
     CREATE INDEX IF NOT EXISTS faces_media ON faces(media_id);
     CREATE INDEX IF NOT EXISTS faces_cluster ON faces(cluster_id);
@@ -291,6 +302,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 'INTEGER NOT NULL DEFAULT 0')
     _add_column(conn, 'profiles', 'exempt', "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, 'media', 'genre_model', 'TEXT')
+    # The orientation pass (media_indexer "orient"): its stamp, and the answer
+    # as JSON - {"deg": clockwise turn that makes the picture upright, "votes":
+    # frames per turn, "frames": frames looked at}. "" = looked, no frames.
+    _add_column(conn, 'media', 'orient_model', 'TEXT')
+    _add_column(conn, 'media', 'orient', 'TEXT')
+    # The videos it found turned, and nothing else: the server reads all of
+    # them for every listing's map, and finding them in the media table is a
+    # scan of the whole 14 GB store (minutes on this disk, measured
+    # 2026-11-08). Keyed like the server's own stores, by root and path.
+    conn.execute("CREATE TABLE IF NOT EXISTS media_orient ("
+                 " root TEXT NOT NULL, path TEXT NOT NULL, deg INTEGER NOT NULL,"
+                 " PRIMARY KEY (root, path))")
     # Carry the older single flag into the set, once. Reading both would mean
     # two sources of truth for the same question.
     conn.execute("UPDATE profiles SET exempt='sketch'"
@@ -298,7 +321,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     # Additive migrations: the CREATE above is a no-op on an existing table,
     # so a column added later has to be applied explicitly.
     have = {r[1] for r in conn.execute("PRAGMA table_info(faces)")}
-    for column, decl in (("frame_ts", "REAL"), ("frame_w", "INTEGER")):
+    for column, decl in (("frame_ts", "REAL"), ("frame_w", "INTEGER"),
+                           ("frame_turn", "INTEGER")):
         if column not in have:
             conn.execute(f"ALTER TABLE faces ADD COLUMN {column} {decl}")
 
@@ -343,7 +367,7 @@ def upsert(conn: sqlite3.Connection, root: str, path: str, size: int | None,
     cur = conn.execute("SELECT id FROM media WHERE root=? AND path=?", (root, path))
     row = cur.fetchone()
     cols = {k: v for k, v in fields.items()
-            if k in ("caption", "ocr", "tags", "ino", *MODEL_KEYS)}
+            if k in ("caption", "ocr", "tags", "ino", "orient", *MODEL_KEYS)}
     cols["indexed_at"] = time.time()
     if row is None:
         cols.update({"root": root, "path": path, "size": size, "kind": kind})
@@ -429,10 +453,10 @@ def replace_faces(conn: sqlite3.Connection, media_id: int, faces: list) -> None:
     for f in faces:
         conn.execute(
             "INSERT INTO faces (media_id, bbox, det_score, embedding, quality,"
-            " frame_ts, frame_w) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " frame_ts, frame_w, frame_turn) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (media_id, json.dumps(f.get("bbox")), f.get("det_score"),
              f.get("embedding"), f.get("quality"),
-             f.get("frame_ts"), f.get("frame_w")))
+             f.get("frame_ts"), f.get("frame_w"), f.get("frame_turn") or None))
 
 
 def needs_work(conn: sqlite3.Connection, root: str, path: str, size: int,
@@ -924,6 +948,55 @@ def content_evidence(conn: sqlite3.Connection, root: str, path: str):
     return (evidence[0]["level"] if evidence else None), evidence
 
 
+ORIENT_TURNS = (90, 180, 270)
+# ffmpeg filter that turns a decoded frame upright, per clockwise degrees.
+TURN_FILTERS = {90: "transpose=1", 180: "hflip,vflip", 270: "transpose=2"}
+
+
+def set_orient(conn: sqlite3.Connection, root: str, path: str, deg: int) -> None:
+    """Records the orientation pass's turn for one video in media_orient: a
+    row while it is turned, none while it is upright."""
+    if deg in ORIENT_TURNS:
+        conn.execute("INSERT OR REPLACE INTO media_orient (root, path, deg) VALUES (?, ?, ?)",
+                     (root, path, deg))
+    else:
+        conn.execute("DELETE FROM media_orient WHERE root = ? AND path = ?", (root, path))
+
+
+def orientations(conn: sqlite3.Connection) -> dict:
+    """{(root, path): degrees clockwise} for every video in the library whose
+    picture the orientation pass found lying on its side or upside down.
+    Only the turned ones: everything else is upright, or not looked at yet.
+    A few hundred rows of media_orient, each checked against the trash by the
+    media table's (root, path) index - never a scan of the media table.
+    CROSS JOIN pins that order: with a plain JOIN and no table statistics the
+    planner may start from media via media_trashed ("trashed IS NULL" looks
+    selective to it) and walk every live row of the library."""
+    out = {}
+    for root, path, deg in conn.execute(
+            "SELECT o.root, o.path, o.deg FROM media_orient o"
+            " CROSS JOIN media m ON m.root = o.root AND m.path = o.path"
+            " WHERE m.trashed IS NULL"):
+        if deg in ORIENT_TURNS:
+            out[(root, path)] = deg
+    return out
+
+
+def orientation(conn: sqlite3.Connection, root: str, path: str):
+    """What the orientation pass decided for one file, for the info panel:
+    {"deg", "votes", "frames"}, {} when it looked and had nothing to look at,
+    None when it has not looked yet."""
+    row = conn.execute("SELECT orient_model, orient FROM media WHERE root = ? AND path = ?",
+                       (root, path)).fetchone()
+    if not row or row[0] is None:
+        return None
+    try:
+        rec = json.loads(row[1]) if row[1] else {}
+    except ValueError:
+        return {}
+    return rec if isinstance(rec, dict) else {}
+
+
 def set_trashed(conn: sqlite3.Connection, items, trashed=True):
     """Mark files as trashed, or bring them back. `items` is (root, path).
 
@@ -947,6 +1020,8 @@ def forget(conn: sqlite3.Connection, items):
     for root, path in items:
         n += conn.execute("DELETE FROM media WHERE root = ? AND path = ?",
                           (root, path)).rowcount
+        # Keyed by path, not by row: no cascade reaches it.
+        conn.execute("DELETE FROM media_orient WHERE root = ? AND path = ?", (root, path))
     conn.commit()
     return n
 

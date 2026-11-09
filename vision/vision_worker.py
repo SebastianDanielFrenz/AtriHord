@@ -539,6 +539,54 @@ def detect_faces(images):
     return out
 
 
+# The orientation pass (media_indexer "orient"): is a video's picture lying on
+# its side? Some channels upload phone footage as a landscape file whose
+# content is turned 90 degrees, with no rotation flag a player could read.
+#
+# Each frame is searched for faces as stored and turned 90, 180 and 270
+# degrees clockwise. The detector alone does not decide it - SCRFD finds the
+# same sideways face in every turn at 0.6-0.8 - but its five landmarks do: a
+# face counts for a turn only when, in that turn, its eyes sit above its mouth.
+# The answer is left to the indexer, which sees all of a video's frames; this
+# only reports what each turn showed.
+ORIENT_TURNS = ((0, None), (90, Image.Transpose.ROTATE_270),
+                (180, Image.Transpose.ROTATE_180), (270, Image.Transpose.ROTATE_90))
+ORIENT_MIN_SCORE = 0.5
+ORIENT_MIN_PX = 40
+
+
+def orient_faces(images):
+    """Per image: {"0": [[score, short side px, up], ...], "90": ..., ...} -
+    the faces found with the picture turned that many degrees clockwise. `up`
+    is where the face's top points in that turn, in degrees: 0 straight up, 90
+    right, -90 left; None when the detector gave no landmarks."""
+    import math
+    det = MODELS["faces"].det_model
+    out = []
+    for img in images:
+        rec = {}
+        for deg, turn in ORIENT_TURNS:
+            arr = np.asarray(img if turn is None else img.transpose(turn))[:, :, ::-1]
+            bboxes, kpss = det.detect(arr, max_num=0, metric="default")
+            faces = []
+            for i, b in enumerate(bboxes):
+                x1, y1, x2, y2, score = (float(v) for v in b)
+                px = min(x2 - x1, y2 - y1)
+                if score < ORIENT_MIN_SCORE or px < ORIENT_MIN_PX:
+                    continue
+                up = None
+                if kpss is not None:
+                    k = kpss[i]
+                    # Eyes minus mouth; image y grows downwards.
+                    vx = (k[0][0] + k[1][0] - k[3][0] - k[4][0]) / 2
+                    vy = (k[0][1] + k[1][1] - k[3][1] - k[4][1]) / 2
+                    up = round(math.degrees(math.atan2(vx, -vy)), 1)
+                faces.append([round(score, 3), round(px), up])
+            rec[str(deg)] = faces
+        out.append(rec)
+    return out
+
+
 def clean_ocr(text):
     stripped = "".join(ch for ch in (text or "") if ch.strip())
     return text.strip() if len(stripped) >= MIN_OCR_CHARS else ""
@@ -824,7 +872,7 @@ def analyze():
                 # Loaded under the same hold as the passes that use them.
                 ensure_models(need_florence=bool({"caption", "ocr"} & tasks),
                               need_tagger="tags" in tasks,
-                              need_faces="faces" in tasks)
+                              need_faces=bool({"faces", "orient"} & tasks))
                 started = time.time()
                 if "caption" in tasks:
                     for r, c in zip(results, florence(images, "<DETAILED_CAPTION>")):
@@ -849,6 +897,9 @@ def analyze():
                 if "faces" in tasks:
                     for r, f in zip(results, detect_faces(images)):
                         r["faces"] = f
+                if "orient" in tasks:
+                    for r, o in zip(results, orient_faces(images)):
+                        r["orient"] = o
         except Exception as exc:
             STATE["last_error"] = str(exc)[:300]
             return jsonify({"error": str(exc)[:300]}), 500
@@ -863,7 +914,7 @@ def analyze():
 
     return jsonify({"results": results, "failed": failed,
                     "models": {"caption": FLORENCE, "ocr": FLORENCE,
-                               "tags": TAGGER, "faces": FACE_MODEL}})
+                               "tags": TAGGER, "faces": FACE_MODEL, "orient": FACE_MODEL}})
 
 
 @app.route("/v1/audio", methods=["POST"])
@@ -1506,7 +1557,7 @@ STEREO_KINDS = ("video", "picture")
 STEREO_PROFILE_KEYS = {"depth_model", "picture_model", "method", "divergence", "convergence", "fps",
                        "max_eye_long_side", "chunk_s", "cq", "nvenc_preset", "bitrate_anchors",
                        "interp_quality", "depth_cq", "depth_maxrate_mbps", "depth_scale",
-                       "picture_jpeg_quality"}
+                       "picture_jpeg_quality", "turn_cw"}
 STEREO_WORD = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 STEREO_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 STEREO_EXT = re.compile(r"^[A-Za-z0-9]{1,5}$")

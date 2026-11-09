@@ -1,0 +1,136 @@
+ksf patch to lsfg-vk (NOT upstream) - Context::acquireAt(timestamp)
+
+Against lsfg-vk commit fd8c317159ff5cc363cffa0f4d1e9568ceadf9dc (LSFG_COMMIT in
+install.sh), which applies it with `patch -p1` in the lsfg-vk source tree.
+
+Why: upstream acquire() always generates frame `index` of `total` at the evenly
+spaced point (index + 1) / (total + 1) between two source frames, so the output
+can only be a whole multiple of the input frame rate. vidinterp-gpu --fps makes
+any rate (25 fps -> 120 fps for a 120 Hz screen, 4.8x) and needs each frame at
+its own point, e.g. 0.2, 0.4, 0.6, 0.8 for one pair and 0.0, 0.2, ... for the
+next. LSFG's shaders already read that point from a uniform (the "timestamp"),
+so the patch only lets the caller choose it:
+  - lsfgvk.hpp/.cpp: Context::acquireAt(float timestamp, bool unsignaled);
+    acquire() is unchanged (it calls acquireAt with -1 = the even spacing).
+  - pipeline.hpp/.cpp: buildTransCmdbuf takes the timestamp; an explicit one
+    is never cached (the same index/total means different timestamps from one
+    pair to the next) and gets keys of its own (bit 63).
+
+If lsfg-vk is ever updated (LSFG_COMMIT bumped): install.sh stops when this
+no longer applies. Port it by hand - find where the transition command buffer
+writes UniformBuffer.timestamp and let the caller pass it - and rebuild;
+vidinterp_gpu.cpp does not compile without acquireAt(). Check the result is
+unchanged for whole multiples (acquireAt(j / m) == the old acquire()).
+
+lsfg-vk is CC-BY-NC-ND-4.0: modifying it for our own use is fine, but the
+patched library must not be redistributed.
+
+diff -ruN a/lsfg-vk-pipeline/include/lsfg-vk/lsfgvk.hpp b/lsfg-vk-pipeline/include/lsfg-vk/lsfgvk.hpp
+--- a/lsfg-vk-pipeline/include/lsfg-vk/lsfgvk.hpp	2026-09-25 12:40:53.789990000 +0200
++++ b/lsfg-vk-pipeline/include/lsfg-vk/lsfgvk.hpp	2026-09-25 12:40:53.839785300 +0200
+@@ -206,6 +206,20 @@
+         void acquire(bool unsignaled = false);
+ 
+         ///
++        /// Acquire a generated image at an explicit point between the two source
++        /// frames (0 = the previous one, 1 = the current one), instead of the even
++        /// spacing acquire() uses ((index + 1) / (total + 1)). Lets the caller
++        /// produce any output frame rate, not only whole multiples of the input.
++        ///
++        /// [ksf patch, vision/vidinterp/lsfg-vk-explicit-timestamp.patch - not upstream]
++        ///
++        /// @param timestamp Position between the source frames, in (0, 1)
++        /// @param unsignaled Do not wait for any timeline semaphores
++        /// @throws std::runtime_error on failure
++        ///
++        void acquireAt(float timestamp, bool unsignaled = false);
++
++        ///
+         /// Wait for the dispatch to complete. This should only be
+         /// called after the last acquire() and will block until the
+         /// last frame is generated.
+diff -ruN a/lsfg-vk-pipeline/src/lsfgvk.cpp b/lsfg-vk-pipeline/src/lsfgvk.cpp
+--- a/lsfg-vk-pipeline/src/lsfgvk.cpp	2026-09-25 12:40:53.790989000 +0200
++++ b/lsfg-vk-pipeline/src/lsfgvk.cpp	2026-09-25 12:40:53.833266500 +0200
+@@ -231,18 +231,27 @@
+ }
+ 
+ void Context::acquire(bool unsignaled) {
++    this->acquireAt(-1.0F, unsignaled); // [ksf patch] negative = the even spacing
++}
++
++// [ksf patch] acquire() with the timestamp given by the caller; see lsfgvk.hpp.
++void Context::acquireAt(float timestamp, bool unsignaled) {
+     auto& ctx{*this->m_impl};
+     const auto& vk{ctx.instance.get().vk};
+ 
+     if (ctx.total == 0 || ctx.index >= ctx.total) {
+         throw std::runtime_error("No more frames to acquire");
+     }
++    if (timestamp >= 1.0F) {
++        throw std::runtime_error("Timestamp must lie between the two source frames");
++    }
+ 
+     // Build transition command buffer to transition the timestamp
+     const auto& transCmdbuf{ctx.pipeline.buildTransCmdbuf(
+         *vk.dld, *vk.device,
+         ctx.iteration,
+-        ctx.index, ctx.total
++        ctx.index, ctx.total,
++        timestamp
+     )};
+ 
+     auto& sync{ctx.syncSemaphore};
+diff -ruN a/lsfg-vk-pipeline/src/pipeline.cpp b/lsfg-vk-pipeline/src/pipeline.cpp
+--- a/lsfg-vk-pipeline/src/pipeline.cpp	2026-09-25 12:40:53.794652300 +0200
++++ b/lsfg-vk-pipeline/src/pipeline.cpp	2026-09-25 12:40:53.835777900 +0200
+@@ -838,10 +838,16 @@
+     const vk::Device& device,
+     uint32_t iteration,
+     uint32_t index,
+-    uint32_t total
++    uint32_t total,
++    float timestamp
+ ) {
+-    const bool persist{total > 8};
+-    const uint64_t key{persist ? ((static_cast<uint64_t>(index) << 32) | total) : index};
++    // [ksf patch] An explicit timestamp is never cached (the same index and total
++    // stand for different timestamps from one pair to the next) and has keys of
++    // its own, so it cannot free a cached buffer that is still in use.
++    const bool explicitTimestamp{timestamp >= 0.0F};
++    const bool persist{!explicitTimestamp && total > 8};
++    const uint64_t key{explicitTimestamp ? ((uint64_t{1} << 63) | index)
++        : persist ? ((static_cast<uint64_t>(index) << 32) | total) : index};
+ 
+     if (persist && this->m_transCmdbufs.contains(key))
+         return *this->m_transCmdbufs.at(key);
+@@ -872,7 +878,8 @@
+     }, dld);
+ 
+     const UniformBuffer buf{
+-        .timestamp = static_cast<float>(index + 1) / static_cast<float>(total + 1),
++        .timestamp = explicitTimestamp ? timestamp
++            : static_cast<float>(index + 1) / static_cast<float>(total + 1),
+         .iteration = iteration
+     };
+     cmdbuf->updateBuffer(
+diff -ruN a/lsfg-vk-pipeline/src/pipeline.hpp b/lsfg-vk-pipeline/src/pipeline.hpp
+--- a/lsfg-vk-pipeline/src/pipeline.hpp	2026-09-25 12:40:53.792494100 +0200
++++ b/lsfg-vk-pipeline/src/pipeline.hpp	2026-09-25 12:40:53.834769700 +0200
+@@ -110,13 +110,15 @@
+         /// @param iteration Current iteration
+         /// @param index Index of the iteration
+         /// @param total Total iterations
++        /// @param timestamp [ksf patch] explicit timestamp in (0, 1); negative = (index + 1) / (total + 1)
+         ///
+         vk::CommandBuffer buildTransCmdbuf(
+             const vk::detail::DispatchLoaderDynamic& dld,
+             const vk::Device& device,
+             uint32_t iteration,
+             uint32_t index,
+-            uint32_t total
++            uint32_t total,
++            float timestamp = -1.0F
+         );
+ 
+     private:

@@ -145,7 +145,7 @@ def heartbeat(base_dir, **fields):
 
 def load_config(base_dir):
     cfg = {
-        "worker": "http://127.0.0.1:8410",
+        "worker": "http://10.1.1.2:8410",
         "token": "",
         "batch_size": 8,
         "tasks": "caption,ocr,tags",
@@ -177,8 +177,12 @@ def frame_timestamps(duration, path=None):
     return [max(0.0, duration * f) for f in frame_fractions(duration, path)]
 
 
-def video_frames(path, rel_path=None):
+def video_frames(path, rel_path=None, turn=0):
     """Stills from a video, as JPEG bytes, without touching the disk.
+
+    `turn` (degrees clockwise, KSF-075) is applied BEFORE the scale, so a video
+    filmed sideways is seen upright by every pass. The face crop in server.py
+    replays the same chain from faces.frame_turn.
 
     One ffmpeg call per frame with -ss BEFORE -i, which seeks by keyframe and
     is effectively instant; seeking after -i decodes from the start and turns
@@ -192,12 +196,52 @@ def video_frames(path, rel_path=None):
         ts = max(0.0, duration * frac)
         proc = subprocess.run(
             ["ffmpeg", "-v", "error", "-ss", f"{ts:.2f}", "-i", path,
-             "-frames:v", "1", "-vf", f"scale='min({FRAME_MAX_WIDTH},iw)':-2",
+             "-frames:v", "1",
+             "-vf", turn_prefix(turn) + f"scale='min({FRAME_MAX_WIDTH},iw)':-2",
              "-f", "image2", "-vcodec", "mjpeg", "-q:v", "3", "pipe:1"],
             capture_output=True, timeout=120)
         if proc.returncode == 0 and proc.stdout:
             frames.append((ts, proc.stdout))
     return frames
+
+
+def turn_prefix(turn):
+    """The ffmpeg filter-chain prefix turning a frame upright ('' for none)."""
+    f = media_ai.TURN_FILTERS.get(turn)
+    return f + "," if f else ""
+
+
+# Passes that read the picture of a video. Their stamp carries "+t<deg>" when
+# the frames they saw were turned, so needs_work() re-does a video when its
+# effective turn changes (the orient pass finds one later, or someone sets one
+# by hand) and never otherwise.
+FRAME_STAMP_KEYS = ("caption_model", "ocr_model", "tag_model", "face_model")
+
+
+def turned_models(models, kind, turn):
+    if kind != "video" or turn not in media_ai.ORIENT_TURNS:
+        return models
+    return {k: (v + f"+t{turn}" if k in FRAME_STAMP_KEYS and v else v)
+            for k, v in models.items()}
+
+
+def effective_turns(conn, base_dir):
+    """{(root, path): deg} as the page shows it: a hand-set turn
+    (rotations.json) wins over the orientation pass's; a hand-set 0 means
+    'as filmed'. Two cheap reads, never a scan of the media table."""
+    turns = dict(media_ai.orientations(conn))
+    try:
+        with open(os.path.join(base_dir, "rotations.json"), encoding="utf-8") as fh:
+            hand = json.load(fh)
+    except (OSError, ValueError):
+        hand = {}
+    if isinstance(hand, dict):
+        for root, paths in hand.items():
+            for path, entry in (paths or {}).items():
+                deg = entry.get("deg") if isinstance(entry, dict) else None
+                if deg in (0, 90, 180, 270):
+                    turns[(root, path)] = deg
+    return turns
 
 
 def probe_duration(path):
@@ -254,7 +298,7 @@ def post_batch(cfg, items, urgent=False):
 PRIORITISE_FACES = False
 
 
-def iter_candidates(roots, conn, models, max_bytes):
+def iter_candidates(roots, conn, models, max_bytes, turns=None):
     """(root_id, rel_path, abs_path, size, kind) for everything still to do,
     newest first.
 
@@ -265,6 +309,9 @@ def iter_candidates(roots, conn, models, max_bytes):
     # The genre pass looks at music and nothing else; every other pass at
     # pictures and videos.
     audio_pass = "genre_model" in models
+    # The orientation pass is about videos only: a photo carries its turn in
+    # its EXIF, which browsers already honour.
+    orient_pass = "orient_model" in models
     for root_id, base in roots:
         if not os.path.isdir(base):
             continue
@@ -276,6 +323,8 @@ def iter_candidates(roots, conn, models, max_bytes):
                 ext = os.path.splitext(name)[1].lower()
                 if audio_pass:
                     kind = "audio" if ext in AUDIO_EXTS else None
+                elif orient_pass:
+                    kind = "video" if ext in VIDEO_EXTS else None
                 else:
                     kind = ("image" if ext in IMAGE_EXTS
                             else "video" if ext in VIDEO_EXTS else None)
@@ -302,7 +351,9 @@ def iter_candidates(roots, conn, models, max_bytes):
                 if st.st_nlink > 1 and media_ai.indexed_elsewhere(
                         conn, f"{st.st_dev}:{st.st_ino}", root_id, rel):
                     continue
-                if not media_ai.needs_work(conn, root_id, rel, st.st_size, models):
+                if not media_ai.needs_work(
+                        conn, root_id, rel, st.st_size,
+                        turned_models(models, kind, (turns or {}).get((root_id, rel), 0))):
                     continue
                 found.append((st.st_mtime, root_id, rel, abs_path, st.st_size, kind))
     found.sort(reverse=True)            # newest first
@@ -323,7 +374,7 @@ def iter_candidates(roots, conn, models, max_bytes):
 
 # ----------------------------------------------------------------- storing --
 
-def merge_video(results, timestamps=None):
+def merge_video(results, timestamps=None, turn=0):
     """One record from several frames. Captions are joined because each
     describes a different moment; OCR is joined for the same reason; tags are
     unioned keeping the highest confidence seen for each."""
@@ -349,7 +400,8 @@ def merge_video(results, timestamps=None):
             # Stamped here, where the frame is still known. By the time these
             # reach the database the frames are gone and a bbox alone cannot
             # be turned back into a crop.
-            faces.append({**f, "frame_ts": ts, "frame_w": FRAME_MAX_WIDTH})
+            faces.append({**f, "frame_ts": ts, "frame_w": FRAME_MAX_WIDTH,
+                          "frame_turn": turn or None})
     return (" ".join(captions),
             "\n".join(ocr),
             {g: [{"tag": t, "p": p} for t, p in sorted(v.items(), key=lambda x: -x[1])]
@@ -375,7 +427,8 @@ def decode_faces(faces):
             continue
         out.append({"bbox": f.get("bbox"), "det_score": f.get("det_score"),
                     "quality": f.get("quality"), "embedding": emb,
-                    "frame_ts": f.get("frame_ts"), "frame_w": f.get("frame_w")})
+                    "frame_ts": f.get("frame_ts"), "frame_w": f.get("frame_w"),
+                    "frame_turn": f.get("frame_turn")})
     return out
 
 
@@ -399,6 +452,9 @@ TASK_MODELS = {
     "tags": ("tag_model", "wd-eva02-large-v3"),
     "faces": ("face_model", "insightface-buffalo_l"),
     "genre": ("genre_model", "discogs-effnet-bsdynamic-1"),
+    # Bump the suffix when orient_decide's rules change: every video is
+    # looked at again (a few hours of frame grabs, minutes of GPU).
+    "orient": ("orient_model", "insightface-det10g-turns-1"),
 }
 
 
@@ -535,7 +591,8 @@ def sweep(cfg, base_dir, roots, limit=None, urgent=False, verbose=True, budget_s
     heartbeat(base_dir, state="walking", task=cfg["tasks"])
     global PRIORITISE_FACES
     PRIORITISE_FACES = bool(cfg.get("prioritise_faces"))
-    todo = iter_candidates(roots, conn, models, max_bytes)
+    turns = effective_turns(conn, base_dir)
+    todo = iter_candidates(roots, conn, models, max_bytes, turns)
     if verbose:
         print(f"[indexer] {len(todo)} files to do "
               f"(walk took {time.time() - t0:.0f}s)", flush=True)
@@ -548,7 +605,8 @@ def sweep(cfg, base_dir, roots, limit=None, urgent=False, verbose=True, budget_s
     for root_id, rel, abs_path, size, kind in todo:
         batch.append((root_id, rel, abs_path, size, kind))
         if len(batch) >= cfg["batch_size"]:
-            d, f = flush(conn, cfg, batch, models, urgent, verbose)
+            d, f = flush(conn, cfg, batch, models, urgent, verbose,
+                         effective_turns(conn, base_dir))
             done += d
             failed += f
             batch = []
@@ -560,7 +618,8 @@ def sweep(cfg, base_dir, roots, limit=None, urgent=False, verbose=True, budget_s
                 stopped_early = True
                 break
     if batch and not stopped_early:
-        d, f = flush(conn, cfg, batch, models, urgent, verbose)
+        d, f = flush(conn, cfg, batch, models, urgent, verbose,
+                     effective_turns(conn, base_dir))
         done += d
         failed += f
     conn.commit()
@@ -573,13 +632,18 @@ def sweep(cfg, base_dir, roots, limit=None, urgent=False, verbose=True, budget_s
     return done, failed, len(todo)
 
 
-def flush(conn, cfg, batch, models, urgent, verbose):
+def flush(conn, cfg, batch, models, urgent, verbose, turns=None):
     """One batch. Images go as themselves; each video is sent as its frames,
     which is why the mapping back is by label rather than by position."""
     if "genre_model" in models:
         return flush_audio(conn, cfg, batch, models, urgent, verbose)
+    if "orient_model" in models:
+        return flush_orient(conn, cfg, batch, models, urgent, verbose)
     payloads, mapping = [], {}
     frame_meta = {}          # label -> timestamp, for video faces
+    turns = turns or {}
+    turn_of = {(r, rel): turns.get((r, rel), 0) if kind == "video" else 0
+               for r, rel, _p, _s, kind in batch}
 
     # Reading the files and pulling video frames happens in parallel. It was
     # the bottleneck, not the GPU: four ffmpeg seeks per video on the spinning
@@ -593,7 +657,7 @@ def flush(conn, cfg, batch, models, urgent, verbose):
             if kind == "image":
                 with open(abs_path, "rb") as fh:
                     return entry, [(None, fh.read())], None
-            return entry, video_frames(abs_path, rel), None
+            return entry, video_frames(abs_path, rel, turn_of.get((root_id, rel), 0)), None
         except (OSError, subprocess.SubprocessError) as exc:
             # A timed-out ffmpeg used to escape as an exception and fail the
             # whole sweep; now the file just produces nothing and is recorded.
@@ -626,7 +690,8 @@ def flush(conn, cfg, batch, models, urgent, verbose):
               if (root_id, rel, size, kind) not in sent]
     for root_id, rel, size, kind in unsent:
         media_ai.upsert(conn, root_id, rel, size, kind,
-                        {**models, "ino": inode_key(abs_by.get((root_id, rel)))})
+                        {**turned_models(models, kind, turn_of.get((root_id, rel), 0)),
+                         "ino": inode_key(abs_by.get((root_id, rel)))})
 
     if not payloads:
         conn.commit()
@@ -645,21 +710,143 @@ def flush(conn, cfg, batch, models, urgent, verbose):
             # Recorded as seen with no content, so a file the decoder refuses
             # is not retried on every sweep for ever.
             media_ai.upsert(conn, root_id, rel, size, kind,
-                            {**models, "ino": inode_key(abs_by.get((root_id, rel)))})
+                            {**turned_models(models, kind, turn_of.get((root_id, rel), 0)),
+                             "ino": inode_key(abs_by.get((root_id, rel)))})
             failed += 1
             continue
         if kind == "video":
             payload = merge_video(usable, [frame_meta.get(l) for l in labels
-                                           if l in by_label])
+                                           if l in by_label],
+                                  turn_of.get((root_id, rel), 0))
         else:
             r = usable[0]
             payload = (r.get("caption") or "", r.get("ocr") or "",
                        r.get("tags") or {}, r.get("faces") or [])
-        store(conn, root_id, rel, size, kind, payload, models,
+        store(conn, root_id, rel, size, kind, payload,
+              turned_models(models, kind, turn_of.get((root_id, rel), 0)),
               inode_key(abs_by.get((root_id, rel))))
         done += 1
     conn.commit()
     return done, failed + len(unsent)
+
+
+# ------------------------------------------------------------- orientation --
+
+# Some channels (Morio CH, Matsurou Ch.) upload phone footage as landscape
+# files whose picture lies on its side, with no rotation flag for a player to
+# read. The worker searches each frame for faces turned four ways and reports
+# which turns showed an UPRIGHT face (vision_worker.orient_faces); this decides
+# the video from all its frames. Measured 2026-11-08 on 31 sideways and 81
+# upright videos: sideways ones voted 90 in nearly every frame, upright ones
+# never voted 90 or 270 - only a stray 180 at 0.53-0.66 in single frames.
+ORIENT_POSITIONS = (0.15, 0.32, 0.5, 0.68, 0.85)
+ORIENT_FRAME_WIDTH = 960       # the detector looks at 640 px; more is only disk time
+ORIENT_UPRIGHT_DEG = 30        # landmarks within this of straight up count as upright
+ORIENT_VOTE_MIN = 0.6          # an upright face this sure makes the frame vote
+ORIENT_MIN_VOTES = 2           # a turn needs at least this many frames...
+ORIENT_MAJORITY = 2            # ...and this many times the votes of every other turn together
+
+
+def orient_frames(path):
+    """A few small stills from across a video, as JPEG bytes. Taken by ffmpeg,
+    which applies a rotation flag the way the browser does - so what is
+    decided here is the turn on top of what the page already shows."""
+    duration = probe_duration(path)
+    if not duration:
+        return []
+    frames = []
+    for frac in ORIENT_POSITIONS:
+        ts = max(0.0, duration * frac)
+        proc = subprocess.run(
+            ["ffmpeg", "-v", "error", "-ss", f"{ts:.2f}", "-i", path,
+             "-frames:v", "1", "-vf", f"scale='min({ORIENT_FRAME_WIDTH},iw)':-2",
+             "-f", "image2", "-vcodec", "mjpeg", "-q:v", "3", "pipe:1"],
+            capture_output=True, timeout=120)
+        if proc.returncode == 0 and proc.stdout:
+            frames.append((ts, proc.stdout))
+    return frames
+
+
+def orient_vote(rec):
+    """The turn one frame votes for - the one holding its surest upright
+    face - or None when no face there is upright and sure enough."""
+    best, best_score = None, 0.0
+    for turn, faces in (rec or {}).items():
+        for score, _px, up in faces or []:
+            if (up is not None and abs(up) <= ORIENT_UPRIGHT_DEG
+                    and score >= ORIENT_VOTE_MIN and score > best_score):
+                best, best_score = int(turn), score
+    return best
+
+
+def orient_decide(recs):
+    """{"deg", "votes", "frames"} for a video from its frames' reports. Not
+    turned unless one turn clearly wins: a wrong turn is worse than none, and
+    the page has a button for the ones this leaves sideways."""
+    votes = {0: 0, 90: 0, 180: 0, 270: 0}
+    for rec in recs:
+        turn = orient_vote(rec)
+        if turn in votes:
+            votes[turn] += 1
+    turn = max(votes, key=lambda t: (votes[t], t == 0))
+    others = sum(votes.values()) - votes[turn]
+    deg = turn if (turn and votes[turn] >= ORIENT_MIN_VOTES
+                   and votes[turn] >= ORIENT_MAJORITY * others) else 0
+    return {"deg": deg, "votes": {str(t): n for t, n in votes.items()}, "frames": len(recs)}
+
+
+def flush_orient(conn, cfg, batch, models, urgent, verbose):
+    """One batch of the orientation pass: each video's frames to the worker,
+    its answer to the index."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def prepare(entry):
+        try:
+            return entry, orient_frames(entry[2]), None
+        except (OSError, subprocess.SubprocessError) as exc:
+            return entry, [], exc
+
+    with ThreadPoolExecutor(max_workers=max(1, int(cfg.get("prep_workers", 6)))) as pool:
+        prepared = list(pool.map(prepare, batch))
+    payloads, mapping = [], {}
+    for entry, blobs, exc in prepared:
+        if exc is not None and verbose:
+            print(f"[indexer] unreadable {entry[1]}: {exc}", flush=True)
+        for _ts, blob in blobs:
+            label = f"o{len(payloads)}|{os.path.basename(entry[1])}"
+            payloads.append((label, blob))
+            mapping.setdefault(entry, []).append(label)
+
+    by_label = {}
+    if payloads:
+        reply = post_batch(cfg, payloads, urgent=urgent)
+        # A worker from before this pass answers every frame without an
+        # "orient" key. Recording that would stamp the whole library as looked
+        # at and never come back to it, so the sweep fails and is retried.
+        if "orient" not in (reply.get("models") or {}):
+            raise RuntimeError("the vision worker has no orient pass yet")
+        by_label = {r["name"]: r for r in reply.get("results", [])}
+
+    done = failed = 0
+    for entry in batch:
+        root_id, rel, abs_path, size, kind = entry
+        recs = [by_label[l]["orient"] for l in mapping.get(entry, [])
+                if isinstance(by_label.get(l, {}).get("orient"), dict)]
+        fields = {**models, "ino": inode_key(abs_path)}
+        deg = 0
+        if recs:
+            decided = orient_decide(recs)
+            deg = decided["deg"]
+            fields["orient"] = json.dumps(decided, separators=(",", ":"))
+            done += 1
+        else:
+            # Looked at, nothing to look at: not retried on every sweep.
+            fields["orient"] = ""
+            failed += 1
+        media_ai.upsert(conn, root_id, rel, size, kind, fields)
+        media_ai.set_orient(conn, root_id, rel, deg)
+    conn.commit()
+    return done, failed
 
 
 # ------------------------------------------------------------------- music --
