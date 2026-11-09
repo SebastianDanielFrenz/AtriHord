@@ -830,9 +830,14 @@
   }
 
   // The bus gain: sqrt(2/N) for N speakers, times whatever the slider holds beyond the stop.
+  // While the app is switching to another speaker set, the page keeps the OLD level until the app has played the audio
+  // that was queued before the switch: the compensation (equal total power) belongs to the speakers that play, and the
+  // app changes its routing only once the audio ahead of the change has been played (its queue, ~60-100 ms).
+  let HOLD = null, holdTimer = 0;
   function busFactor() {
-    const n = speakerCount();
-    return n > 2 ? Math.sqrt(2 / n) * Math.max(1, userVolume) : 1;
+    const n = HOLD ? HOLD.n : speakerCount();
+    const v = HOLD ? HOLD.vol : userVolume;
+    return n > 2 ? Math.sqrt(2 / n) * Math.max(1, v) : 1;
   }
 
   // What each element plays at: the slider times the file's gain - through
@@ -1082,7 +1087,7 @@
       if (typeof ev.data !== 'string') return;
       let msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
-      if (msg.type === 'stats') { DG.stats(msg); return; }
+      if (msg.type === 'stats') { BR.queuedMs = msg.queued_ms; DG.stats(msg); return; }
       if (msg.type === 'replaced') { bridgeYield('the app was taken by another client'); return; }     // app 1.2.4+: no reconnect fight
       if (msg.type === 'info') {
         rlog('bridge: info', { bed: msg.bed, heights: msg.heights });
@@ -1205,8 +1210,22 @@
   // fraction of a second of crackling and excessive volume"). Now the bus fades to silence in
   // 30 ms, the rebuild happens while it is silent, and the new level fades in over 50 ms.
   let upFadeTimer = 0;
-  function buildUpmix() {
+  // `before` = {n, vol}: the speaker count and volume in force before the change that asks for this rebuild.
+  function buildUpmix(before) {
     const ctx = LOUD.ctx;
+    // The bridge route does not change when only the speaker set does: the same tap feeds the same app, which switches its
+    // routing by itself. No fade, no rewiring (they were a cut of ~150 ms plus the app's queue running dry); only the
+    // level follows the switch, when the app plays it.
+    if (before && UP.viaBridge && bridgeActive() && UP.input && ctx && ctx.state === 'running' && !UP.muting) {
+      HOLD = HOLD || before;
+      applyVolume();
+      bridgeSettings();
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => { HOLD = null; applyVolume(); }, Math.max(40, Math.min(400, (BR.queuedMs == null ? 100 : BR.queuedMs) + 20)));
+      renderSurround();
+      return;
+    }
+    HOLD = null; clearTimeout(holdTimer);
     if (!ctx || !UP.input || ctx.state !== 'running') { buildUpmixNow(); return; }
     const g = UP.input.gain;
     const t = ctx.currentTime;
@@ -1351,17 +1370,19 @@
   }
 
   function setHeights(on) {
+    const before = { n: speakerCount(), vol: userVolume };
     UP.heights = !!on;
     store('heights', UP.heights);
-    buildUpmix();
+    buildUpmix(before);
     renderSurround();                  // the name follows the switch at once, also before anything plays
     toast(UP.heights ? 'Height speakers on' : 'Height speakers off');
   }
 
   function setUpMode(mode) {
+    const before = { n: speakerCount(), vol: userVolume };
     UP.mode = mode === 'stereo' ? 'stereo' : 'all';
     store('upmode', UP.mode);
-    buildUpmix();
+    buildUpmix(before);
     toast(UP.mode === 'all' ? 'Every ear-level speaker' : 'Stereo, front pair only');
   }
 
