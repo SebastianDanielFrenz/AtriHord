@@ -1354,6 +1354,7 @@
     UP.heights = !!on;
     store('heights', UP.heights);
     buildUpmix();
+    renderSurround();                  // the name follows the switch at once, also before anything plays
     toast(UP.heights ? 'Height speakers on' : 'Height speakers off');
   }
 
