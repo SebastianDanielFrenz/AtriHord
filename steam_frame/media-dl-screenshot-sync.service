@@ -1,0 +1,12 @@
+[Unit]
+Description=Upload Steam screenshots to media-dl
+After=network-online.target
+
+[Service]
+EnvironmentFile=%h/.config/media-dl-screenshot-sync.env
+ExecStart=/usr/bin/python3 %h/media-dl-screenshot-sync.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target
