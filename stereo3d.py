@@ -127,11 +127,16 @@ def batch_key(keys):
     return hashlib.sha256("|".join(sorted(keys)).encode()).hexdigest()[:32]
 
 
-def profile_for(kind, cfg):
+def profile_for(kind, cfg, turn=0):
     """(profile sent to the worker, profile id). The profile holds only keys of stereo_job.py's
     DEFAULT_PROFILE (the worker refuses others); the id is part of the cache key, so changing a
     setting that changes the output re-converts on the next request. Pictures are never
-    resolution-capped, so the cap is not part of their profile."""
+    resolution-capped, so the cap is not part of their profile.
+    turn: degrees clockwise (90/180/270) that make a video filmed on its side upright (media-dl's
+    effective turn, auto-detected or hand-set). It travels as the profile key turn_cw - the driver adds
+    it to the container rotation before depth estimation - and is part of the id, so a changed turn
+    converts again. 0 adds nothing: every key made before the turn existed stays valid. Pictures
+    ignore it (the orientation pass covers videos only)."""
     div, conv = float(cfg["divergence"]), float(cfg["convergence"])
     if kind == "video":
         side = int(cfg["max_eye_long_side"])
@@ -140,6 +145,9 @@ def profile_for(kind, cfg):
                    "fps": 120, "max_eye_long_side": side,
                    "bitrate_anchors": [[1920 * 1080, mbps[0]], [2560 * 1440, mbps[1]], [3840 * 2160, mbps[2]]]}
         pid = "v1:any_v2_s:rf3:d%g:c%g:f120:l%d:b%s" % (div, conv, side, "-".join("%g" % m for m in mbps))
+        if turn in (90, 180, 270):
+            profile["turn_cw"] = turn
+            pid += ":t%d" % turn
         return profile, pid
     profile = {"picture_model": "Distill_Any_L", "method": "row_flow_v3", "divergence": div,
                "convergence": conv, "picture_jpeg_quality": 95}
@@ -471,12 +479,14 @@ class Service:
     forbidden_dirs: folders the cache must never be in (the app dir, /data2)."""
 
     def __init__(self, queue_path, settings_fn, resolve_fn, worker_fn, favourite_fn=None,
-                 forbidden_dirs=(), clock=time.time, pinned_fn=None):
+                 forbidden_dirs=(), clock=time.time, pinned_fn=None, turn_fn=None):
         self.last_backfill = None
         self.last_pin_scan = None
         # pinned_fn(root, path) -> the file is in a permanent folder: converted like a favourite
         # and never evicted (favourite_fn should say True for it too).
         self.pinned_fn = pinned_fn
+        # turn_fn(root, path) -> degrees clockwise the file is filmed on its side (0 = upright)
+        self.turn_fn = turn_fn
         self.settings_fn, self.resolve_fn = settings_fn, resolve_fn
         self.favourite_fn = favourite_fn or (lambda root, path: False)
         self.forbidden = [os.path.realpath(d) for d in forbidden_dirs]
@@ -549,13 +559,26 @@ class Service:
             return self._index
 
     # ---- requests
+    def _turn(self, kind, root, path):
+        """The turn the conversion applies: videos only, 0 when unknown or on any error."""
+        if kind != "video" or self.turn_fn is None:
+            return 0
+        try:
+            t = int(self.turn_fn(root, path) or 0)
+        except Exception:
+            return 0
+        return t if t in (90, 180, 270) else 0
+
+    def _profile(self, kind, root, path, cfg=None):
+        return profile_for(kind, cfg or self.cfg(), self._turn(kind, root, path))
+
     def _validate(self, item):
         """Re-stat the item's file: ('ok', item) | ('gone', None) | ('rekeyed', item)."""
         full = self.resolve_fn(item["root"], item["path"])
         ver = file_version(full) if full else None
         if ver is None:
             return "gone", None
-        _, pid = profile_for(item["kind"], self.cfg())
+        _, pid = self._profile(item["kind"], item["root"], item["path"])
         key = item_key(ver, pid)
         if key == item["key"]:
             return "ok", item
@@ -588,7 +611,7 @@ class Service:
             return dict(out, status="skipped", reason="file not found")
         if not ver.get("size"):
             return dict(out, status="skipped", reason="the file is empty")
-        profile, pid = profile_for(kind, cfg)
+        profile, pid = self._profile(kind, root, path, cfg)
         key = item_key(ver, pid)
         out["key"] = key
         q = self.queue
@@ -695,7 +718,7 @@ class Service:
         ver = file_version(full) if full else None
         if ver is None:
             return {"status": "none"}
-        _, pid = profile_for(kind, self.cfg())
+        _, pid = self._profile(kind, root, path)
         q = self.queue
         with q.lock:
             it = q.items.get(item_key(ver, pid))
@@ -732,7 +755,7 @@ class Service:
         new_ver = file_version(full) if full else None
         if new_ver is None:
             return {"status": "none"}
-        _, pid = profile_for(kind, cfg)
+        _, pid = self._profile(kind, root, path, cfg)
         old_key = item_key(old_version, pid)
         if old_key == item_key(new_ver, pid):
             return {"status": "none"}
@@ -1228,7 +1251,7 @@ class Service:
         kind = group[0]["kind"]
         wk = group[0]["key"] if kind == "video" else batch_key([i["key"] for i in group])
         keys = [i["key"] for i in group]
-        profile, _ = profile_for(kind, cfg)
+        profile, _ = self._profile(kind, group[0]["root"], group[0]["path"], cfg)
         label = ("%s/%s" % (group[0]["root"], group[0]["path"]) + (" +%d" % (len(group) - 1) if len(group) > 1 else ""))[:200]
         try:
             code, job = self.worker.get_job(wk)
@@ -1447,7 +1470,7 @@ class Service:
         ver = file_version(full) if full else None
         if ver is None:
             return {"state": "none", "reason": "file not found"}
-        _, pid = profile_for(kind, self.cfg())
+        _, pid = self._profile(kind, root, path)
         key = item_key(ver, pid)
         idx = self.index()
         if idx is not None and idx.files_ok(key):

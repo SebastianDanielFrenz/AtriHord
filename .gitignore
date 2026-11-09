@@ -48,3 +48,6 @@ web_files/downloads/
 SECURITY_PRIVATE.md
 private_notes/
 stage/
+
+# --- agent scratch folder (copies of prod files, probes)
+scratchpad/

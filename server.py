@@ -715,7 +715,7 @@ _thumb_build_semaphore = threading.BoundedSemaphore(THUMB_BUILD_CONCURRENCY)
 
 THUMB_MAX_DIMENSION = 400
 
-def _cached_thumbnail(file_path, build_arg_variants):
+def _cached_thumbnail(file_path, build_arg_variants, variant=""):
     """Shared disk cache for generated thumbnails. build_arg_variants is a
     list of ffmpeg argv candidates (each minus the output path), tried in
     order until one actually produces a non-empty file - ffmpeg exits 0 while
@@ -723,7 +723,9 @@ def _cached_thumbnail(file_path, build_arg_variants):
     clip, so the output has to be checked rather than just the exit code.
     Cache entries are keyed by source path and invalidated when it changes."""
     os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
-    cache_key = hashlib.sha256(file_path.encode("utf-8")).hexdigest()
+    # A turned thumbnail is another picture of the same file: its own entry,
+    # so turning a video back finds the old one still cached.
+    cache_key = hashlib.sha256((file_path + variant).encode("utf-8")).hexdigest()
     cache_path = os.path.join(THUMB_CACHE_DIR, cache_key + ".jpg")
 
     src_mtime = None
@@ -764,13 +766,19 @@ def _cached_thumbnail(file_path, build_arg_variants):
     print(f"[Warning] Failed to generate thumbnail for {file_path}")
     return None
 
-def get_video_frame_thumbnail(file_path):
+# ffmpeg filters that turn a frame clockwise by this many degrees.
+TURN_FILTERS = {90: "transpose=1", 180: "hflip,vflip", 270: "transpose=2"}
+
+
+def get_video_frame_thumbnail(file_path, turn=0):
     """Grabs a frame via ffmpeg for a video preview thumbnail. Most video
     containers here (webm especially) don't carry an embedded cover picture
     the way audio files do (see get_embedded_cover above), so this actually
     decodes a frame instead - cached to disk since that's too expensive to
     redo on every grid render/scroll."""
     scale = f"scale='min({THUMB_MAX_DIMENSION},iw)':-1"
+    if turn in TURN_FILTERS:
+        scale += "," + TURN_FILTERS[turn]
     return _cached_thumbnail(file_path, [
         # -ss before -i is a fast (approximate) input seek - fine for a
         # throwaway preview frame and much quicker than decoding from 0.
@@ -780,7 +788,7 @@ def get_video_frame_thumbnail(file_path):
         # encode nothing at all at 3s, so fall back to the first frame.
         ["ffmpeg", "-y", "-i", file_path,
          "-frames:v", "1", "-vf", scale, "-q:v", "4"],
-    ])
+    ], variant=f"|turn{turn}" if turn in TURN_FILTERS else "")
 
 def get_image_downscaled_thumbnail(file_path):
     """A small JPEG stand-in for a full-size image. The grid renders these
@@ -3089,7 +3097,9 @@ def thumb_version(entry):
     changed) would stay invisible until that day was up, with clearing the
     browser cache as the only cure. Folding the source's mtime into the URL
     keeps the long caching and still updates the moment the file does."""
-    return int(entry.get("mtime") or 0)
+    # The turn too: a thumbnail made turned replaces one that was not.
+    turn = entry.get("rotate") or 0
+    return f"{int(entry.get('mtime') or 0)}r{turn}" if turn else int(entry.get("mtime") or 0)
 
 # yt-dlp writes "<name>-poster.jpg" beside the video it belongs to. It is a
 # companion to that video, not a picture in its own right, and in this library
@@ -4956,6 +4966,185 @@ def content_info(root_id, path):
     return {"bucket": CONTENT_BUCKET_OF.get(level), "level": level, "evidence": evidence[:4]}
 
 
+# ---- sideways videos ----------------------------------------------------------
+# Some channels (Morio CH, Matsurou Ch.) upload phone footage as landscape files
+# whose picture lies on its side, with no rotation flag a player could read.
+# The indexer's orientation pass finds them (media_indexer "orient", from where
+# upright faces are in a few frames); a turn set by hand wins over it either
+# way - "as filmed" undoes a wrong guess, any turn fixes a miss. Listings carry
+# the turn (attach_media_dimensions), tiles get the turned shape and thumbnails
+# are made turned; the page turns the video itself (js/rotate.js).
+ROTATION_STORE = os.path.join(BASE_DIR, "rotations.json")
+ROTATION_TURNS = (0, 90, 180, 270)
+ROTATION_STORE_MAX = 50000
+# The pass's answers are read into memory because every listing asks. Only
+# the pass changes them, a few hundred files an hour at most.
+ORIENT_REFRESH_S = 600
+_orient_cache = {"map": None, "built_at": 0.0}
+_orient_lock = threading.Lock()
+_orient_build_lock = threading.Lock()
+_rotation_lock = threading.Lock()
+_rotation_overrides = {"loaded": False, "entries": {}}     # root -> path -> {deg, by, at}
+
+
+def _build_orientations():
+    try:
+        turns = media_ai.orientations(media_ai.connect(BASE_DIR))
+    except Exception as exc:
+        print(f"[Warning] video orientations not read: {exc}")
+        return None
+    with _orient_lock:
+        _orient_cache.update(map=turns, built_at=time.time())
+    return turns
+
+
+def _refresh_orientations():
+    try:
+        _build_orientations()
+    finally:
+        _orient_build_lock.release()
+
+
+def orientation_map():
+    """{(root, path): degrees clockwise} the orientation pass found turned.
+    A stale map is answered at once while a thread rebuilds it; the first one
+    is waited for, or the first listing after a restart would show every
+    sideways video sideways (and cache its thumbnail URL that way)."""
+    with _orient_lock:
+        turns, built_at = _orient_cache["map"], _orient_cache["built_at"]
+    if turns is not None:
+        if time.time() - built_at >= ORIENT_REFRESH_S and _orient_build_lock.acquire(blocking=False):
+            try:
+                threading.Thread(target=_refresh_orientations, daemon=True).start()
+            except Exception:
+                _orient_build_lock.release()
+        return turns
+    with _orient_build_lock:
+        with _orient_lock:
+            if _orient_cache["map"] is not None:
+                return _orient_cache["map"]
+        turns = _build_orientations()
+    return turns if turns is not None else {}
+
+
+def _rotation_store():
+    """Caller holds _rotation_lock."""
+    if not _rotation_overrides["loaded"]:
+        try:
+            with open(ROTATION_STORE, encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            _rotation_overrides["entries"] = loaded if isinstance(loaded, dict) else {}
+        except (OSError, ValueError):
+            _rotation_overrides["entries"] = {}
+        _rotation_overrides["loaded"] = True
+    return _rotation_overrides["entries"]
+
+
+def _save_rotation_store():
+    """Caller holds _rotation_lock."""
+    entries = _rotation_overrides["entries"]
+    total = sum(len(paths) for paths in entries.values())
+    if total > ROTATION_STORE_MAX:
+        flat = sorted((e.get("at") or 0, root, path)
+                      for root, paths in entries.items() for path, e in paths.items())
+        for _, root, path in flat[:total - ROTATION_STORE_MAX]:
+            entries[root].pop(path, None)
+    for root in [r for r, paths in entries.items() if not paths]:
+        entries.pop(root, None)
+    try:
+        with open(ROTATION_STORE + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump(entries, fh, separators=(",", ":"))
+        os.replace(ROTATION_STORE + ".tmp", ROTATION_STORE)
+    except OSError as exc:
+        print(f"[Warning] {ROTATION_STORE} not saved: {exc}", flush=True)
+
+
+def rotation_overrides():
+    """root -> path -> {deg, by, at}: a copy, for a listing to read without
+    holding the lock per file."""
+    with _rotation_lock:
+        return {root: dict(paths) for root, paths in _rotation_store().items()}
+
+
+def set_rotation_override(root_id, rel_path, deg, by):
+    """deg 0/90/180/270 to set by hand, None to go back to the automatic turn."""
+    with _rotation_lock:
+        entries = _rotation_store()
+        if deg is None:
+            (entries.get(root_id) or {}).pop(rel_path, None)
+        else:
+            entries.setdefault(root_id, {})[rel_path] = {"deg": deg, "by": by, "at": time.time()}
+        _save_rotation_store()
+
+
+def turn_of(root_id, rel_path, autos=None, hand=None):
+    """(degrees clockwise the page turns this file, the automatic turn, the
+    hand-set entry or None). autos/hand are snapshots a listing reads once."""
+    autos = orientation_map() if autos is None else autos
+    hand = rotation_overrides() if hand is None else hand
+    auto = autos.get((root_id, rel_path), 0)
+    entry = (hand.get(root_id) or {}).get(rel_path)
+    if isinstance(entry, dict) and entry.get("deg") in ROTATION_TURNS:
+        return entry["deg"], auto, entry
+    return auto, auto, None
+
+
+def turned_dims(dims, deg):
+    """A dimensions entry as the page shows the file: width and height swap
+    for a quarter turn, so tiles, the portrait/landscape filter and the size
+    filters all see the upright picture."""
+    if dims and deg in (90, 270):
+        return [dims[1], dims[0], *dims[2:]]
+    return dims
+
+
+def rotation_info(root_id, rel_path):
+    """The info panel's turn: {deg, auto, set: hand-set deg or None, by, at,
+    pass: what the orientation pass saw (None = not looked yet)}."""
+    deg, auto, entry = turn_of(root_id, rel_path)
+    try:
+        seen = media_ai.orientation(media_ai.connect(BASE_DIR), root_id, rel_path)
+    except Exception as exc:
+        print(f"[Warning] orientation of {rel_path}: {exc}")
+        seen = None
+    return {"deg": deg, "auto": auto, "set": entry["deg"] if entry else None,
+            "by": entry.get("by") if entry else None, "at": entry.get("at") if entry else None,
+            "pass": seen}
+
+
+@app.route("/api/media/rotation", methods=["POST"])
+def media_rotation():
+    """Body {root, path, deg: 0 | 90 | 180 | 270 | null}: how far to turn ONE
+    video clockwise, by hand - 0 shows it as filmed; null goes back to the
+    orientation pass's answer. One shared answer for everybody, like the
+    upscale model, so who set it is kept."""
+    user = get_authenticated_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    root_id = (data.get("root") or DEFAULT_ROOT_ID).strip()
+    rel_path = (data.get("path") or "").strip("/").replace("\\", "/")
+    deg = data.get("deg")
+    if deg is not None:
+        try:
+            deg = int(deg) % 360
+        except (TypeError, ValueError):
+            deg = -1
+        if deg not in ROTATION_TURNS:
+            return jsonify({"error": "deg must be 0, 90, 180, 270 or null"}), 400
+    if not rel_path or not root_visible_to(user, root_id):
+        return jsonify({"error": "Forbidden"}), 403
+    full = resolve_media_path(root_id, rel_path)
+    if not full or not os.path.isfile(full):
+        return jsonify({"error": "Not found"}), 404
+    if "video" not in kinds_of(os.path.basename(rel_path)):
+        return jsonify({"error": "only videos can be turned"}), 400
+    set_rotation_override(root_id, rel_path, deg, user["username"])
+    print(f"turn of {root_id}/{rel_path} set to {'automatic' if deg is None else deg} "
+          f"by {user['username']}", flush=True)
+    return jsonify(rotation_info(root_id, rel_path))
+
+
 # What the search box is asking about. Filename is the original behaviour and
 # stays the default: it needs no index, it is instant, and it is what someone
 # typing an artist's name means. The rest read what the vision models saw and
@@ -5061,6 +5250,7 @@ def apply_media_filters(entries, filters, root_id=None):
     # every image the backfill has not reached yet from "show me images".
     dims_needed = any((orientation, min_w, min_h, min_any, min_fps, max_fps))
     dims_map = media_dimensions_map() if dims_needed else {}
+    autos, hand = (orientation_map(), rotation_overrides()) if dims_needed else ({}, {})
     levels = content_levels_map() if content else None
     out = []
     for entry in entries:
@@ -5073,7 +5263,8 @@ def apply_media_filters(entries, filters, root_id=None):
         if not dims_needed:
             out.append(entry)
             continue
-        dims = dims_map.get(media_dimensions.key_for(rid, entry.get("path") or ""))
+        dims = turned_dims(dims_map.get(media_dimensions.key_for(rid, entry.get("path") or "")),
+                           turn_of(rid, entry.get("path") or "", autos, hand)[0])
         if media_dimensions.matches(dims, orientation, min_w, min_h, min_any,
                                     min_fps, max_fps):
             entry["width"], entry["height"] = dims[0], dims[1]
@@ -5095,6 +5286,7 @@ def attach_media_dimensions(entries, root_id=None):
     if not entries:
         return entries
     dims_map = media_dimensions_map()
+    autos, hand = orientation_map(), rotation_overrides()
     unmeasured = []
     for entry in entries:
         if entry.get("is_dir"):
@@ -5103,6 +5295,13 @@ def attach_media_dimensions(entries, root_id=None):
         path = entry.get("path") or ""
         key = media_dimensions.key_for(rid, path)
         dims = dims_map.get(key)
+        # The turn the page gives a sideways video, what the orientation pass
+        # would give it, and whether a person set it (js/rotate.js).
+        deg, auto, set_by_hand = turn_of(rid, path, autos, hand)
+        if deg or auto or set_by_hand:
+            entry["rotate"] = deg
+            entry["rotate_auto"] = auto
+            entry["rotate_set"] = bool(set_by_hand)
         # Never measured, measured before videos carried a duration, or
         # measured when the file had another size (replaced): measure it now,
         # in the background (queue_dimensions).
@@ -5114,7 +5313,8 @@ def attach_media_dimensions(entries, root_id=None):
                     unmeasured.append((key, full))
         if not dims:
             continue
-        entry["width"], entry["height"] = dims[0], dims[1]
+        shown = turned_dims(dims, deg)
+        entry["width"], entry["height"] = shown[0], shown[1]
         duration = media_dimensions.duration_of(dims)
         if duration:
             entry["duration"] = duration
@@ -5573,6 +5773,8 @@ def media_info():
         content = content_info(root_id, rel_path)
         if content is not None:
             info["content"] = content
+    if "video" in kinds_of(info["name"]):
+        info["rotation"] = rotation_info(root_id, rel_path)
     if "audio" in kinds_of(info["name"]):
         genres = genre_info(root_id, rel_path)
         if genres is not None:
@@ -6527,6 +6729,7 @@ def search_media():
         orientation, min_w, min_h, min_any, kinds, min_fps, max_fps, content = filters
         dims_needed = any((orientation, min_w, min_h, min_any, min_fps, max_fps))
         dims_map = media_dimensions_map() if dims_needed else {}
+        autos, hand = (orientation_map(), rotation_overrides()) if dims_needed else ({}, {})
         levels = content_levels_map() if content else None
         kept = []
         for row in matches:
@@ -6539,7 +6742,8 @@ def search_media():
             if not dims_needed:
                 kept.append(row)
                 continue
-            dims = dims_map.get(media_dimensions.key_for(row[0], row[1]))
+            dims = turned_dims(dims_map.get(media_dimensions.key_for(row[0], row[1])),
+                               turn_of(row[0], row[1], autos, hand)[0])
             if media_dimensions.matches(dims, orientation, min_w, min_h, min_any,
                                         min_fps, max_fps):
                 kept.append(row)
@@ -6597,7 +6801,7 @@ def media_face_thumb(face_id):
 
     conn = media_ai.connect(BASE_DIR)
     row = conn.execute(
-        "SELECT f.bbox, f.frame_ts, f.frame_w, m.root, m.path, m.kind"
+        "SELECT f.bbox, f.frame_ts, f.frame_w, f.frame_turn, m.root, m.path, m.kind"
         " FROM faces f JOIN media m ON m.id = f.media_id"
         " WHERE f.id = ?", (face_id,)).fetchone()
     if row is None:
@@ -6644,6 +6848,10 @@ def media_face_thumb(face_id):
             seek = ["-ss", f"{float(row['frame_ts']):.2f}"]
         if row["frame_w"]:
             pre = f"scale='min({int(row['frame_w'])},iw)':-2,"
+        # A video filmed sideways was turned upright BEFORE that scale (KSF-075).
+        turn_f = TURN_FILTERS.get(row["frame_turn"] or 0)
+        if turn_f:
+            pre = turn_f + "," + pre
         proc = subprocess.run(
             ["ffmpeg", "-v", "error", "-y", *seek, "-i", path, "-frames:v", "1",
              "-vf", f"{pre}{crop},"
@@ -11203,7 +11411,8 @@ def stereo3d_service():
             _stereo3d["svc"] = stereo3d.Service(
                 STEREO3D_QUEUE_FILE, stereo3d_settings, resolve_media_path, vision_worker_address,
                 lambda r, p: stereo3d_in_permanent_folder(r, p) or stereo3d_is_favourite(r, p),
-                forbidden_dirs=(BASE_DIR, "/data2"), pinned_fn=stereo3d_in_permanent_folder)
+                forbidden_dirs=(BASE_DIR, "/data2"), pinned_fn=stereo3d_in_permanent_folder,
+                turn_fn=lambda r, p: turn_of(r, p)[0])
         return _stereo3d["svc"]
 
 
@@ -11520,7 +11729,9 @@ def settings_3d_cache_clear():
 # lives in indexer_config.json, which the indexer re-reads every rotation.
 
 INDEXER_CONFIG_FILE = os.path.join(BASE_DIR, "indexer_config.json")
-INDEXER_PASSES = ("tags", "faces", "caption,ocr")
+# Every pass media_indexer.TASK_MODELS knows: a pipeline holding one the page
+# does not offer could not be saved ("genre" was in it by hand).
+INDEXER_PASSES = ("tags", "faces", "caption,ocr", "genre", "orient")
 INDEXER_DEFAULTS = {"pipeline": ["tags"], "pass_budget_s": 1800, "batch_size": 8, "prep_workers": 6}
 _settings_write_lock = threading.Lock()
 
@@ -12169,7 +12380,8 @@ def media_thumbnail():
     if not os.path.isfile(file_path):
         return jsonify({"error": "Not found"}), 404
 
-    cover = get_file_thumbnail(file_path)
+    rel_path = (request.args.get("path") or "").strip("/").replace("\\", "/")
+    cover = get_file_thumbnail(file_path, turn_of(root_id, rel_path)[0])
 
     if not cover:
         return jsonify({"error": "No embedded thumbnail"}), 404
@@ -12179,12 +12391,13 @@ def media_thumbnail():
     resp.headers["Cache-Control"] = "private, max-age=86400"
     return resp
 
-def get_file_thumbnail(file_path):
+def get_file_thumbnail(file_path, turn=0):
+    """turn: degrees clockwise a sideways video is shown turned (turn_of)."""
     media_type = classify_media_type(file_path)
     if media_type == "audio":
         return get_embedded_cover(file_path)
     if media_type == "video":
-        return get_video_frame_thumbnail(file_path)
+        return get_video_frame_thumbnail(file_path, turn)
     if media_type == "image":
         return get_image_downscaled_thumbnail(file_path)
     if is_ugoira_zip(file_path):
@@ -13151,6 +13364,7 @@ def _compute_query_share(share):
         q.get("filters") or {})
     dims_needed = any((orientation, min_w, min_h, min_any, min_fps, max_fps))
     dims_map = media_dimensions_map() if dims_needed else {}
+    autos, hand = (orientation_map(), rotation_overrides()) if dims_needed else ({}, {})
     levels = content_levels_map() if content else None
     out = []
     for root, path in pairs:
@@ -13163,7 +13377,8 @@ def _compute_query_share(share):
         if content and not content_matches(levels, content, root, path):
             continue
         if dims_needed and not media_dimensions.matches(
-                dims_map.get(media_dimensions.key_for(root, path)),
+                turned_dims(dims_map.get(media_dimensions.key_for(root, path)),
+                            turn_of(root, path, autos, hand)[0]),
                 orientation, min_w, min_h, min_any, min_fps, max_fps):
             continue
         out.append((root, path))
@@ -13412,7 +13627,7 @@ def public_share_thumbnail(token):
     if not file_path or not os.path.isfile(file_path):
         return jsonify({"error": "Not found"}), 404
 
-    cover = get_file_thumbnail(file_path)
+    cover = get_file_thumbnail(file_path, turn_of(root_id, rel_path.strip("/").replace("\\", "/"))[0])
     if not cover:
         return jsonify({"error": "No embedded thumbnail"}), 404
 
