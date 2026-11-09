@@ -81,9 +81,9 @@ To offer it from your own server: take the signed `latest.json` and `ksf-spatial
 project's `tools/publish.py`) and put both in `web_files/app/spatial-bridge/`. They are not part of this repository,
 so a `git pull` never delivers a new bridge: copy the two files again after each bridge release. The exe is both
 what the music page's "Spatial app" link downloads (`/app/ksf-spatial-bridge.exe`, signed-in users) and what
-installed copies fetch to update themselves (served without login at `/api/public/spatial-bridge/`). Installed
-copies then update themselves from `--update-url https://your.server/api/public/spatial-bridge/latest.json`
-(or `--update-github SebastianDanielFrenz/AtriBridge` to follow the GitHub releases), and need
+installed copies fetch to update themselves (served without login at `/api/public/spatial-bridge/`). Bridges from
+1.2.6 on update from the GitHub releases by default; older ones (and any copy you point at this server with
+`--update-url https://your.server/api/public/spatial-bridge/latest.json`) use the files here, and need
 `--origin https://your.server` (or `origin=` in `spatial-bridge.conf`) to accept connections from your music page:
 the built-in allow-list only covers media-dl.ksfhost.de, music.ksfhost.de and localhost.
 Without these files the link redirects to `MEDIA_BRIDGE_DOWNLOAD_URL` if you set one, else the music page hides it.
