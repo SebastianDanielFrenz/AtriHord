@@ -178,10 +178,27 @@ check("a person with no other half gets no suggestions", found_b == [], found_b)
 # ------------------------------------------------ the line moves with the core --
 plain = media_faces.suggest_same_person(conn, index, 1)
 detail = media_faces.suggest_same_person(conn, index, 1, detail=True)
-check("detail=True: the same people, scores and order, each with z, bg and likely (z >= the line in sd), no cosplay field",
-      [(d["id"], d["score"]) for d in detail] == plain and not any("cosplay" in d for d in detail)
+check("detail=True: the plain matches first (same scores and order), each with z, bg and likely (z line and score line), no cosplay field",
+      [(d["id"], d["score"]) for d in detail][:len(plain)] == plain and not any("cosplay" in d for d in detail)
       and all(d["z"] is not None and d["bg"] is not None for d in detail)
-      and all(d["likely"] == (d["z"] >= media_faces.SUGGEST_Z_LIKELY) for d in detail), detail)
+      and all(d["likely"] == (d["z"] >= media_faces.SUGGEST_Z_LIKELY and d["score"] >= media_faces.SUGGEST_LIKELY_ABS_MIN)
+              for d in detail), detail)
+check("the cards are the ones z lets in: z >= the show line and score >= the minimum; extras beyond the plain floor are never likely",
+      all(d["z"] >= media_faces.SUGGEST_Z_SHOW and d["score"] >= media_faces.SUGGEST_Z_ABS_MIN for d in detail)
+      and all(not d["likely"] for d in detail[len(plain):]) and all(d["score"] < media_faces.SUGGEST_FLOOR for d in detail[len(plain):]), detail)
+saved_show = media_faces.SUGGEST_Z_SHOW
+try:
+    media_faces.SUGGEST_Z_SHOW = 1e9
+    check("a show line nobody reaches: no cards at all (the old 50 % floor no longer admits anything)",
+          media_faces.suggest_same_person(conn, index, 1, detail=True) == [])
+finally:
+    media_faces.SUGGEST_Z_SHOW = saved_show
+saved_min = media_faces.SUGGEST_Z_ABS_MIN
+try:
+    media_faces.SUGGEST_Z_ABS_MIN = 0.99
+    check("the absolute minimum holds back even a 12-sd match", media_faces.suggest_same_person(conn, index, 1, detail=True) == [])
+finally:
+    media_faces.SUGGEST_Z_ABS_MIN = saved_min
 stats = media_faces.background_stats(conn, index, media_faces.cluster_faces(conn, 1, media_faces.SUGGEST_FACES)[1], 1)
 check("the background is measured on clusters that are not the source, with a floored sd",
       stats is not None and stats[1] >= media_faces.SUGGEST_BG_SD_MIN and 0.0 <= stats[0] < 0.5, stats)
@@ -193,7 +210,9 @@ try:
     media_faces.SUGGEST_Z_LIKELY = 1e9
     check("a line nobody reaches: nothing is likely", not any(x["likely"] for x in media_faces.suggest_same_person(conn, index, 1, detail=True)))
     media_faces.SUGGEST_Z_LIKELY = -1e9
-    check("a line everybody reaches: all are likely", all(x["likely"] for x in media_faces.suggest_same_person(conn, index, 1, detail=True)))
+    d_all = media_faces.suggest_same_person(conn, index, 1, detail=True)
+    check("a line everybody reaches: all at or above the score line are likely, the weaker ones still not",
+          all(x["likely"] == (x["score"] >= media_faces.SUGGEST_LIKELY_ABS_MIN) for x in d_all) and any(x["likely"] for x in d_all), d_all)
 finally:
     media_faces.SUGGEST_Z_LIKELY, = saved
 
@@ -378,7 +397,7 @@ if have_flask:
     body = rv.get_json()
     check("the route answers once the index is built", code == 200 and body["loading"] is False, body)
     check("it offers person A's other half, with a score and the 'likely' flag, and the source",
-          [i["id"] for i in body["items"]] == [3] and body["items"][0]["similarity"] >= media_faces.SUGGEST_LIKELY
+          body["items"][0]["id"] == 3 and not any(i["likely"] for i in body["items"][1:]) and body["items"][0]["similarity"] >= media_faces.SUGGEST_LIKELY
           and body["items"][0]["likely"] is True and body["source"]["id"] == 1, body)
     check("the response carries the bulk-offer constants for the page",
           body["bulk_min"] == media_faces.SUGGEST_BULK_MIN
@@ -387,7 +406,7 @@ if have_flask:
     check("each tile carries its z (sd above the person's own background) and the page gets bg and the z line",
           all(isinstance(i["z"], float) for i in body["items"]) and isinstance(body["bg"], float)
           and body["z_likely"] == media_faces.SUGGEST_Z_LIKELY
-          and all(i["likely"] == (i["z"] >= media_faces.SUGGEST_Z_LIKELY) for i in body["items"]), body)
+          and all(i["likely"] == (i["z"] >= media_faces.SUGGEST_Z_LIKELY and i["similarity"] >= media_faces.SUGGEST_LIKELY_ABS_MIN) for i in body["items"]), body)
     check("... as full People tiles (count, cover face)",
           body["items"][0]["count"] >= 1 and body["items"][0]["face_id"] == face_ids[3][0], body["items"][0])
     rv, code = get("/api/media/people/777/similar", cid=777)
@@ -401,7 +420,7 @@ if have_flask:
     svc.snapshot = {"auto": {}, "real": {"3": {"real": False, "judged": 9}}, "roots": roots}
     rv, code = get("/api/media/people/1/similar", cid=1)
     check("a person judged to be drawn is not offered (the grid hides them too)",
-          rv.get_json()["items"] == [], rv.get_json())
+          3 not in [i["id"] for i in rv.get_json()["items"]], rv.get_json())
     svc.snapshot = {"auto": {}, "real": {}, "roots": roots}
 
     def post(path, payload, fn, cid):
@@ -412,7 +431,7 @@ if have_flask:
     rv, code = post("/api/media/people/1/not_same", {"other": 3}, "media_person_not_same", 1)
     check("saying 'not the same' succeeds", code == 200 and rv.get_json() == {"ok": True}, (code, rv.get_json()))
     rv, code = get("/api/media/people/1/similar", cid=1)
-    check("... and the pair is no longer offered", rv.get_json()["items"] == [], rv.get_json())
+    check("... and the pair is no longer offered", 3 not in [i["id"] for i in rv.get_json()["items"]], rv.get_json())
     rv, code = get("/api/media/people/3/similar", cid=3)
     check("... from either side", 1 not in [i["id"] for i in rv.get_json()["items"]], rv.get_json())
     rv, code = post("/api/media/people/1/not_same", {"other": 1}, "media_person_not_same", 1)
@@ -465,7 +484,7 @@ if have_flask:
     check("the merge POST still merges", code == 200 and rv.get_json()["into"] == 1, (code, rv.get_json()))
     check("... and invalidates the People snapshot", svc.invalidated == 1, svc.invalidated)
     rv, code = get("/api/media/people/1/similar", cid=1)
-    check("... and the merged person is gone from the suggestions", rv.get_json()["items"] == [], rv.get_json())
+    check("... and the merged person is gone from the suggestions", not ({2, 3} & {i["id"] for i in rv.get_json()["items"]}), rv.get_json())
 
 conn.close()
 shutil.rmtree(tmp, ignore_errors=True)

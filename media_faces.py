@@ -759,6 +759,21 @@ SUGGEST_BG_STEP = 40
 SUGGEST_BG_MIN = 8
 SUGGEST_BG_SD_MIN = 0.03      # an unusually tight background must not inflate the score
 SUGGEST_Z_LIKELY = 5.0
+# Which cards appear at all (detail mode, background measurable): at least
+# SUGGEST_Z_SHOW sd above the background AND at least SUGGEST_Z_ABS_MIN. Probe on
+# the live library 2026-11-10: @chi_muu (34 cards at the old 50 % floor) and
+# @wellchannel0214 (35) have none at z >= 4 - their wrong cosplay matches vanish;
+# Ortega's 18 correct matches (all >= 63 %) stay, with a clean break to noise at
+# 28 %. The absolute minimum exists because a very low background (Emma Watson,
+# Dua Lipa: mean 0.10, sd 0.03) makes a 25 % score "4 sd" - none of those are
+# a person. A deeper search was NOT added: beyond the 40 nearest, the only z >= 4
+# hits scored 24-26 %.
+SUGGEST_Z_SHOW = 4.0
+SUGGEST_Z_ABS_MIN = 0.40
+# ... and "likely" (green, bulk merge) also needs this score: the lowest correct
+# match ever seen is 51 % (Spanish cosplayer); a 43 % "12 sd" on a very uniform
+# background is shown for a look, never offered as a sure thing.
+SUGGEST_LIKELY_ABS_MIN = 0.50
 
 
 def likely_line(scores):
@@ -972,16 +987,18 @@ def significance(score, mean, sd):
 
 
 def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
-                        floor=SUGGEST_FLOOR, detail=False):
+                        floor=None, detail=False):
     """[(cluster id, link score)] best first: the clusters most likely to be the
     same person as `cluster_id`, from the resident index then scored exactly.
     `ok(cluster_id)` filters candidates (permissions, hidden, rejected pairs).
 
     detail=True returns dicts {id, score, z, bg, likely} instead: z is the score
-    in standard deviations above this person's own background (bg = its mean),
-    and `likely` means z >= SUGGEST_Z_LIKELY (see there); without a measurable
-    background z and bg are None and the absolute lines (likely_line) decide.
-    Without detail the plain tuples keep their meaning and only `floor` applies."""
+    in standard deviations above this person's own background (bg = its mean).
+    Which candidates appear follows it: z >= SUGGEST_Z_SHOW and score >=
+    SUGGEST_Z_ABS_MIN (a `floor` given explicitly applies on top); `likely` means
+    z >= SUGGEST_Z_LIKELY. Without a measurable background z and bg are None, the
+    absolute floor (SUGGEST_FLOOR unless given) and lines (likely_line) decide.
+    Without detail the plain tuples keep their meaning and only the floor applies."""
     _ids, xs = cluster_faces(conn, cluster_id, SUGGEST_FACES)
     if not len(xs):
         return []
@@ -990,17 +1007,22 @@ def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
     def allowed(cid):
         return cid != cluster_id and (ok is None or ok(cid))
 
+    short = index.shortlist(xs, allowed)
+    stats = background_stats(conn, index, xs, cluster_id) if (detail and short) else None
+    if stats is None:
+        gate = SUGGEST_FLOOR if floor is None else floor
+    else:
+        gate = SUGGEST_Z_ABS_MIN if floor is None else max(floor, SUGGEST_Z_ABS_MIN)
     scored = []
-    for cid in index.shortlist(xs, allowed):
+    for cid in short:
         _fids, ys = cluster_faces(conn, cid, SUGGEST_FACES)
         s = link_score(xs, ys)
-        if s >= floor:
+        if s >= gate and (stats is None or significance(s, *stats) >= SUGGEST_Z_SHOW):
             scored.append((cid, round(float(s), 4)))
     scored.sort(key=lambda t: -t[1])
     scored = scored[:limit]
     if not detail:
         return scored
-    stats = background_stats(conn, index, xs, cluster_id) if scored else None
     out = []
     if stats is None:
         line = likely_line([s for _, s in scored])
@@ -1011,7 +1033,7 @@ def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
     for cid, s in scored:
         z = significance(s, mean, sd)
         out.append({"id": cid, "score": s, "z": round(z, 1), "bg": round(mean, 3),
-                    "likely": z >= SUGGEST_Z_LIKELY})
+                    "likely": z >= SUGGEST_Z_LIKELY and s >= SUGGEST_LIKELY_ABS_MIN})
     return out
 
 
