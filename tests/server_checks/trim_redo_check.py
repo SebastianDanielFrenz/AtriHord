@@ -409,4 +409,5 @@ check("trim hook: an exception in on_cut is swallowed, the cut stands", state ==
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d/%d passed" % (sum(RESULTS), len(RESULTS)))
+print("ALL PASS" if all(RESULTS) else "SOME CHECKS FAILED")  # the line run_all.sh looks for
 sys.exit(0 if all(RESULTS) else 1)
