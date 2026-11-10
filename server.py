@@ -8148,46 +8148,22 @@ def media_label_export():
         "Content-Disposition": 'attachment; filename="media-labels.jsonl"'})
 
 
-@app.route("/api/media/indexing", methods=["GET"])
-def media_indexing_status():
-    """How far the vision passes have got, and what the worker is doing.
+def indexer_heartbeat():
+    """(beat, alive, state, left): what the indexer's own status file says.
 
-    Cached for a few seconds: the counts are aggregates over a table with a
-    row per library file, and the page that shows this polls every second.
-    """
-    if not get_authenticated_user():
-        return jsonify({"error": "Unauthorized"}), 401
-    now = time.time()
-    if _indexing_cache["data"] and now - _indexing_cache["at"] < INDEXING_CACHE_S:
-        return jsonify(_indexing_cache["data"])
-
-    try:
-        conn = media_ai.connect(BASE_DIR)
-        cov = media_ai.coverage(conn)
-        faces_files = conn.execute(
-            "SELECT COUNT(DISTINCT media_id) AS n FROM faces").fetchone()["n"] or 0
-    except Exception as exc:
-        print(f"[Warning] indexing status: {exc}")
-        cov, faces_files = {}, 0
-
-    # What the indexer is currently doing, read from its own config rather
-    # than guessed - it is the thing that decides.
-    task, running = None, False
-    try:
-        with open(os.path.join(BASE_DIR, "indexer_config.json"), encoding="utf-8") as fh:
-            task = (json.load(fh) or {}).get("tasks")
-    except (OSError, ValueError):
-        pass
-    # NOT `systemctl --user`: this process is a SYSTEM unit, which has no
-    # XDG_RUNTIME_DIR or DBUS_SESSION_BUS_ADDRESS and therefore cannot see a
-    # user unit at all - it answered "stopped" while the indexer was visibly
-    # working. The indexer reports itself instead.
+    NOT `systemctl --user`: this process is a SYSTEM unit, which has no
+    XDG_RUNTIME_DIR or DBUS_SESSION_BUS_ADDRESS and therefore cannot see a
+    user unit at all - it answered "stopped" while the indexer was visibly
+    working. The indexer reports itself instead. A host without an indexer has
+    no such file: beat is {} and the state is "stopped"."""
     beat = {}
     try:
         with open(os.path.join(media_ai.store_dir(BASE_DIR),
                                "indexer_status.json"), encoding="utf-8") as fh:
             beat = json.load(fh) or {}
     except (OSError, ValueError):
+        beat = {}
+    if not isinstance(beat, dict):
         beat = {}
     # Stale means stopped: a heartbeat older than this is a crashed or killed
     # sweep, and reporting it as running would be worse than saying nothing.
@@ -8207,19 +8183,223 @@ def media_indexing_status():
         state = "idle"
     else:
         state = "indexing"
+    return beat, alive, state, left
+
+
+def indexer_wait_reason(beat):
+    """(why, retry_at): what the indexer says it is waiting for, and when it
+    looks again. Its `detail` is the vision worker's own answer, usually JSON
+    like {"error": "3D conversion running", "retry_after_s": 600}; anything else
+    is shown as written. ("", None) when it is not waiting."""
+    if beat.get("state") != "waiting-for-window":
+        return "", None
+    detail = beat.get("detail")
+    why = ""
+    if isinstance(detail, str) and detail.strip():
+        try:
+            parsed = json.loads(detail)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            why = str(parsed.get("error") or parsed.get("message") or "")
+        else:
+            why = detail.strip()
+    elif isinstance(detail, dict):
+        why = str(detail.get("error") or detail.get("message") or "")
+    until = beat.get("until")
+    return why[:300], (float(until) if isinstance(until, (int, float)) else None)
+
+
+# --- The vision worker, as the admin status view sees it ---------------------
+# Its address and token come from indexer_config.json (or MEDIA_VISION_WORKER),
+# the same place the indexer reads them. The token stays in this process: the
+# browser only ever gets what the worker answered. Every call is cached a few
+# seconds - failures too, so a worker that is down costs one timeout per
+# window and not one per poll - and every source may be missing.
+WORKER_CALL_CACHE_S = 5.0
+_worker_call_cache = {}
+_worker_call_lock = threading.Lock()
+
+
+def _worker_config():
+    """(base URL, token, explicit): explicit is False when nothing names a
+    worker and the default address is only a guess."""
+    try:
+        with open(os.path.join(BASE_DIR, "indexer_config.json"), encoding="utf-8") as fh:
+            cfg = json.load(fh) or {}
+    except (OSError, ValueError):
+        cfg = {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    named = cfg.get("worker") or os.environ.get("MEDIA_VISION_WORKER") or ""
+    return (str(named or DEFAULT_WORKER_URL), str(cfg.get("token") or ""), bool(named))
+
+
+def worker_call(path, timeout=3):
+    """One GET against the vision worker, cached: {"state": "ok", "data": ...},
+    or "not_configured" (nothing names a worker and the default does not
+    answer), "unreachable" (+ error), "unavailable" (the worker does not offer
+    this: 404), "refused" (401/403 - wrong or missing token)."""
+    now = time.time()
+    with _worker_call_lock:
+        hit = _worker_call_cache.get(path)
+        if hit and now - hit[0] < WORKER_CALL_CACHE_S:
+            return hit[1]
+    base, token, explicit = _worker_config()
+    out = {"state": "unreachable", "error": ""}
+    try:
+        req = urllib.request.Request(base.rstrip("/") + path)
+        if token:
+            req.add_header("Authorization", "Bearer " + token)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.load(r)
+        out = {"state": "ok", "data": data if isinstance(data, dict) else {}}
+    except urllib.error.HTTPError as exc:
+        out = {"state": {401: "refused", 403: "refused", 404: "unavailable"}.get(exc.code, "unreachable"),
+               "error": "the worker answered %s" % exc.code}
+    except Exception as exc:
+        out = {"state": "unreachable" if explicit else "not_configured",
+               "error": str(exc)[:200]}
+    with _worker_call_lock:
+        _worker_call_cache[path] = (now, out)
+    return out
+
+
+def vision_worker_status():
+    """The worker's /v1/status as {"reachable": bool, ...} (what the indexing
+    panel always read), cached."""
+    got = worker_call("/v1/status")
+    if got["state"] == "ok":
+        return {"reachable": True, **got["data"]}
+    return {"reachable": False}
+
+
+def stereo_queue_counts():
+    """The server's own 3D queue (stereo3d_queue.json) by state, read from the
+    file. Never through the service: that would start its dispatcher on a host
+    that does not use 3D. {"state": "none"} when there is no queue file."""
+    try:
+        with open(STEREO3D_QUEUE_FILE, encoding="utf-8") as fh:
+            data = json.load(fh) or {}
+    except FileNotFoundError:
+        return {"state": "none", "counts": {}, "total": 0}
+    except (OSError, ValueError) as exc:
+        return {"state": "unreadable", "error": str(exc)[:200], "counts": {}, "total": 0}
+    counts = {}
+    for item in (data.get("items") or []) if isinstance(data, dict) else []:
+        if isinstance(item, dict):
+            key = str(item.get("state") or "unknown")
+            counts[key] = counts.get(key, 0) + 1
+    return {"state": "ok", "counts": counts, "total": sum(counts.values())}
+
+
+_worker_status_cache = {"at": 0.0, "data": None}
+
+
+@app.route("/api/media/worker-status", methods=["GET"])
+@require_admin
+def media_worker_status():
+    """Admin view: why the indexer waits, what the vision worker is doing, the 3D
+    work on it and in this server's queue, and how far tagging has got. Read only."""
+    now = time.time()
+    if _worker_status_cache["data"] and now - _worker_status_cache["at"] < WORKER_CALL_CACHE_S:
+        return jsonify(_worker_status_cache["data"])
+
+    beat, alive, state, left = indexer_heartbeat()
+    why, retry_at = indexer_wait_reason(beat)
+    indexer = {
+        "seen": bool(beat), "state": state, "task": beat.get("task"), "why": why,
+        "retry_at": retry_at,
+        "retry_in_s": max(0, round(retry_at - now)) if retry_at else None,
+        "beat_age_s": round(now - beat["at"]) if isinstance(beat.get("at"), (int, float)) else None,
+        "left": left if state == "indexing" else 0,
+        "done": beat.get("done") or 0, "failed": beat.get("failed") or 0,
+    }
+
+    got = worker_call("/v1/status")
+    if got["state"] == "ok":
+        d = got["data"]
+        worker = {"state": "ok"}
+        for key in ("paused", "loaded", "last_error", "idle_for_s", "seconds_per_image", "upscales",
+                    "upscale_waiting", "in_window", "windows", "vram_allocated_mb", "images", "batches"):
+            if key in d:
+                worker[key] = d[key]
+        tagger = d.get("tagger") if isinstance(d.get("tagger"), dict) else {}
+        worker["tagger"] = {"id": tagger.get("id"), "source": tagger.get("source")}
+    else:
+        worker = {"state": got["state"], "error": got.get("error", "")}
+    tagger_id = (worker.get("tagger") or {}).get("id") or None
+
+    stereo_got = worker_call("/v1/stereo/status")
+    if stereo_got["state"] == "ok":
+        d = stereo_got["data"]
+        gate = d.get("gate") if isinstance(d.get("gate"), dict) else {}
+        run = d.get("running") if isinstance(d.get("running"), dict) else None
+        stereo_worker = {
+            "state": "ok" if d.get("available") else "unavailable",
+            "missing": d.get("missing") or [], "paused": d.get("paused"),
+            "running": ({k: run.get(k) for k in ("label", "kind", "files", "running_s", "state")}
+                        if run else None),
+            "counts": d.get("counts") or {}, "waiting": len(d.get("waiting") or []),
+            "held": len(d.get("held") or []),
+            "gate": {"open": gate.get("open"), "reason": gate.get("reason")},
+            "disk_free_gb": d.get("disk_free_gb"), "min_free_gb": d.get("min_free_gb"),
+        }
+    else:
+        stereo_worker = {"state": stereo_got["state"], "error": stereo_got.get("error", "")}
+    stereo = {"enabled": bool(stereo3d_settings().get("enabled")),
+              "worker": stereo_worker, "queue": stereo_queue_counts()}
+
+    tagging = {"model": tagger_id, "counted": "model" if tagger_id else "any stamp",
+               "done": None, "total": None}
+    try:
+        cov = media_ai.coverage(media_ai.connect(BASE_DIR), tagger_id)
+        tagging["done"], tagging["total"] = cov.get("tags_done", 0), cov.get("indexable", 0)
+    except Exception as exc:
+        print(f"[Warning] worker status: tag progress unavailable: {exc}")
+
+    data = {"at": now, "indexer": indexer, "worker": worker, "stereo": stereo, "tagging": tagging}
+    _worker_status_cache.update({"at": now, "data": data})
+    return jsonify(data)
+
+
+@app.route("/api/media/indexing", methods=["GET"])
+def media_indexing_status():
+    """How far the vision passes have got, and what the worker is doing.
+
+    Cached for a few seconds: the counts are aggregates over a table with a
+    row per library file, and the page that shows this polls every second.
+    """
+    if not get_authenticated_user():
+        return jsonify({"error": "Unauthorized"}), 401
+    now = time.time()
+    if _indexing_cache["data"] and now - _indexing_cache["at"] < INDEXING_CACHE_S:
+        return jsonify(_indexing_cache["data"])
+
+    # Asked first: its tagger id is what the tag bar counts against.
+    worker = vision_worker_status()
+    tagger_id = ((worker.get("tagger") or {}).get("id") or None) if worker.get("reachable") else None
+    try:
+        conn = media_ai.connect(BASE_DIR)
+        cov = media_ai.coverage(conn, tagger_id)
+        faces_files = conn.execute(
+            "SELECT COUNT(DISTINCT media_id) AS n FROM faces").fetchone()["n"] or 0
+    except Exception as exc:
+        print(f"[Warning] indexing status: {exc}")
+        cov, faces_files = {}, 0
+
+    # What the indexer is currently doing, read from its own config rather
+    # than guessed - it is the thing that decides.
+    task, running = None, False
+    try:
+        with open(os.path.join(BASE_DIR, "indexer_config.json"), encoding="utf-8") as fh:
+            task = (json.load(fh) or {}).get("tasks")
+    except (OSError, ValueError):
+        pass
+    beat, alive, state, left = indexer_heartbeat()
     running = state == "indexing"
     if beat.get("task"):
         task = beat["task"]
-
-    worker = {"reachable": False}
-    try:
-        cfg_path = os.path.join(BASE_DIR, "indexer_config.json")
-        with open(cfg_path, encoding="utf-8") as fh:
-            base = (json.load(fh) or {}).get("worker") or DEFAULT_WORKER_URL
-        with urllib.request.urlopen(base.rstrip("/") + "/v1/status", timeout=3) as r:
-            worker = {"reachable": True, **json.load(r)}
-    except Exception:
-        pass
 
     # Which pass the "time left" applies to - the one actually running.
     done_key = {"caption": "captioned", "caption,ocr": "captioned",
@@ -8237,6 +8417,9 @@ def media_indexing_status():
         "left": left if state == "indexing" else 0,
         "sweep": beat,
         "worker": worker,
+        # Which model the tags bar counts: the worker's tagger, or any stamp
+        # when the worker did not say.
+        "tag_model": tagger_id,
         **cov,
     }
     data["current_done"] = data.get(done_key, 0) if done_key else 0

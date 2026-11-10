@@ -1060,10 +1060,16 @@ def forget(conn: sqlite3.Connection, items):
     return n
 
 
-def coverage(conn: sqlite3.Connection) -> dict:
+def coverage(conn: sqlite3.Connection, tag_model=None) -> dict:
     """How much of the library has been looked at, per pass. The filter panel
     says this out loud: a half-built index looks exactly like a search that
-    loses results at random."""
+    loses results at random.
+
+    `tag_model` is the tagger the indexer is meant to stamp files with now. When
+    it is given, tags_done counts only files stamped with THAT model: after a
+    tagger switch the library still carries the old stamp, and counting any
+    stamp read as finished while every file was waiting to be tagged again.
+    None (the worker was not asked, or did not say) counts any stamp."""
     row = conn.execute(
         "SELECT COUNT(*) AS n,"
         # != '' as well as NOT NULL: an empty string records a pass that
@@ -1090,9 +1096,10 @@ def coverage(conn: sqlite3.Connection) -> dict:
         "SELECT COUNT(*) AS n,"
         " SUM(caption_model IS NOT NULL) AS caption_done,"
         " SUM(ocr_model IS NOT NULL) AS ocr_done,"
-        " SUM(tag_model IS NOT NULL) AS tags_done,"
+        + (" SUM(tag_model = ?) AS tags_done," if tag_model else " SUM(tag_model IS NOT NULL) AS tags_done,") +
         " SUM(face_model IS NOT NULL) AS faces_done"
-        " FROM media WHERE trashed IS NULL AND kind IS NOT 'audio'").fetchone()
+        " FROM media WHERE trashed IS NULL AND kind IS NOT 'audio'",
+        (tag_model,) if tag_model else ()).fetchone()
     music = conn.execute(
         "SELECT COUNT(*) AS n, SUM(genre_model IS NOT NULL) AS done"
         " FROM media WHERE trashed IS NULL AND kind = 'audio'").fetchone()

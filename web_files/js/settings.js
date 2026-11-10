@@ -624,27 +624,131 @@ async function renderLiveUpscaling(view) {
   }
 }
 
+// ------------------------------------------------------ worker status --
+// What the indexer, the vision worker and the 3D conversion are doing, and why
+// the indexer waits. Everything comes from this server (/api/media/worker-status,
+// admin only), which reads its own files and asks the worker itself: the
+// worker's address and token never reach the browser. Any of the three may be
+// absent on a host (no indexer, no worker, no 3D add-on) and the page says so.
+function fmtDuration(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  if (s < 90) return `${s} s`;
+  if (s < 5400) return `${Math.round(s / 60)} min`;
+  return `${(s / 3600).toFixed(1)} h`;
+}
+
+const WORKER_STATE_TEXT = {
+  not_configured: 'Not configured',
+  unreachable: 'Not reachable',
+  refused: 'Refused the access token',
+  unavailable: 'Not offered by this worker',
+};
+
+function workerStateText(w) {
+  const text = WORKER_STATE_TEXT[w.state] || w.state || '?';
+  return w.error && w.state !== 'not_configured' ? `${text} (${w.error})` : text;
+}
+
+function statusLine(label, value) {
+  return h('p', { class: 'settings-help' }, h('strong', {}, `${label}: `), value);
+}
+
+function indexerCard(ix, now) {
+  const stateText = !ix.seen ? 'No indexer has reported to this server'
+    : { stopped: 'Not running', waiting: 'Waiting', indexing: 'Indexing', idle: 'Idle' }[ix.state] || ix.state;
+  const retryIn = ix.retry_at ? Math.max(0, ix.retry_at - now) : null;
+  return card('Indexer',
+    h('div', { class: 'settings-stats' },
+      stat('State', stateText),
+      stat('Pass', ix.task || '-'),
+      stat('Left in this sweep', ix.seen ? fmtNumber(ix.left) : '-'),
+      stat('Failed in this sweep', ix.seen ? fmtNumber(ix.failed) : '-')),
+    ix.state === 'waiting'
+      ? statusLine('Why it waits', ix.why || 'the worker gave no reason (outside its processing hours, or busy)')
+      : null,
+    ix.state === 'waiting' && retryIn !== null
+      ? statusLine('Looks again in', fmtDuration(retryIn)) : null,
+    ix.beat_age_s !== null && ix.beat_age_s !== undefined
+      ? h('p', { class: 'settings-help' }, `Last heard from ${fmtDuration(ix.beat_age_s)} ago.`) : null);
+}
+
+function workerCard(w, tagging) {
+  if (w.state !== 'ok') {
+    return card('Vision worker', h('p', { class: 'settings-help' }, workerStateText(w)));
+  }
+  const tg = w.tagger || {};
+  return card('Vision worker',
+    h('div', { class: 'settings-stats' },
+      stat('Paused', w.paused ? 'yes' : 'no'),
+      stat('Models loaded', (w.loaded || []).join(', ') || 'none'),
+      stat('Idle for', w.idle_for_s != null ? fmtDuration(w.idle_for_s) : '-'),
+      stat('Seconds per image', w.seconds_per_image != null ? String(w.seconds_per_image) : '-'),
+      stat('Upscales served', fmtNumber(w.upscales)),
+      stat('Upscales waiting', fmtNumber(w.upscale_waiting)),
+      stat('VRAM in use', w.vram_allocated_mb != null ? `${fmtNumber(w.vram_allocated_mb)} MB` : '-')),
+    w.windows ? statusLine('Processing hours', w.windows) : null,
+    statusLine('Tagger', tg.id ? `${tg.id}${tg.source ? ` (${tg.source})` : ''}` : 'not reported'),
+    w.last_error ? h('p', { class: 'settings-error' }, `Last error: ${w.last_error}`) : null,
+    tagging && tagging.total !== null && tagging.total !== undefined
+      ? statusLine('Tag progress',
+        `${fmtNumber(tagging.done)} of ${fmtNumber(tagging.total)} files carry ` +
+        (tagging.model ? `the tagger ${tagging.model}` : 'any tag stamp (the worker did not name its tagger)'))
+      : null);
+}
+
+function stereoCard(st) {
+  const w = st.worker || {};
+  const q = st.queue || {};
+  const queueCounts = Object.entries(q.counts || {}).map(([k, n]) => `${fmtNumber(n)} ${k}`).join(', ');
+  const parts = [];
+  if (!st.enabled && w.state !== 'ok') {
+    return card('3D conversion', h('p', { class: 'settings-help' },
+      w.state === 'not_configured' || w.state === 'unavailable' ? 'Not in use on this server.' : workerStateText(w)));
+  }
+  parts.push(statusLine('Switched on here', st.enabled ? 'yes' : 'no'));
+  if (w.state === 'ok') {
+    const run = w.running;
+    parts.push(h('div', { class: 'settings-stats' },
+      stat('Running', run ? `${run.label || run.kind || 'job'}` : 'nothing'),
+      stat('Files in the job', run && run.files ? fmtNumber(run.files) : '-'),
+      stat('Running for', run && run.running_s != null ? fmtDuration(run.running_s) : '-'),
+      stat('Waiting on the worker', fmtNumber(w.waiting)),
+      stat('Disk free there', w.disk_free_gb != null ? `${w.disk_free_gb} GB` : '-')));
+    const counts = Object.entries(w.counts || {}).map(([k, n]) => `${fmtNumber(n)} ${k}`).join(', ');
+    parts.push(statusLine('Jobs on the worker', counts || 'none'));
+    parts.push(statusLine('New work may start',
+      w.gate && w.gate.open === false ? `no - ${w.gate.reason || 'the worker did not say why'}` : 'yes'));
+  } else {
+    parts.push(statusLine('Worker', workerStateText(w)));
+  }
+  parts.push(statusLine('Waiting in this server’s queue',
+    q.state === 'ok' ? (queueCounts || 'nothing')
+      : (q.state === 'none' ? 'no queue yet' : `unreadable (${q.error || '?'})`)));
+  return card('3D conversion', ...parts);
+}
+
 async function renderVisionWorker(view) {
-  const box = card('Current worker', h('p', { class: 'settings-help' }, 'Loading…'));
+  const box = h('div', {}, h('p', { class: 'settings-help' }, 'Loading…'));
   view.append(box, h('section', { class: 'settings-card is-soon' },
     h('p', {}, "Coming next: editing the worker's own settings, switching the indexer to a worker on another ",
       'machine, and a step-by-step guide for installing one.')));
-  try {
-    const d = await api('GET', '/api/media/indexing');
-    const w = d.worker || {};
-    fill(box, h('h3', {}, 'Current worker'),
-      h('div', { class: 'settings-stats' },
-        stat('Reachable', w.reachable ? 'yes' : 'no'),
-        stat('Models loaded', (w.loaded || []).join(', ') || 'none'),
-        stat('VRAM in use', w.vram_allocated_mb != null ? `${fmtNumber(w.vram_allocated_mb)} MB` : '-'),
-        stat('Upscales served', fmtNumber(w.upscales))),
-      h('p', { class: 'settings-help' },
-        `Indexer: ${d.state || '?'}${d.current_task ? `, pass ${d.current_task}` : ''}. `,
-        `Processing hours: ${w.windows || '?'}.`),
-      w.last_error ? h('p', { class: 'settings-error' }, `Last error: ${w.last_error}`) : null);
-  } catch (err) {
-    box.append(h('p', { class: 'settings-error' }, err.message));
+  async function load() {
+    try {
+      const d = await api('GET', '/api/media/worker-status');
+      const now = Date.now() / 1000;
+      fill(box, indexerCard(d.indexer || {}, now), workerCard(d.worker || {}, d.tagging),
+        stereoCard(d.stereo || {}));
+    } catch (err) {
+      fill(box, h('p', { class: 'settings-error' }, err.message));
+    }
   }
+  await load();
+  const poll = () => setTimeout(async () => {
+    if (!box.isConnected) return;              // another section was opened
+    await load();
+    poll();
+  }, 5000);
+  poll();
 }
 
 // The cover job: the settings, then what it has done and what is left. It
