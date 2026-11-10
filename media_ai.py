@@ -860,6 +860,20 @@ def tag_pool_total(conn: sqlite3.Connection, category="character", query=None,
     return conn.execute(sql, args).fetchone()["n"]
 
 
+def tag_categories(conn: sqlite3.Connection) -> list:
+    """Every category in media_tags, read by hopping along the (category, tag)
+    index - one seek per category, so it costs nothing and a new category
+    (genre came later) is never left out of files_for_tag."""
+    cats, last = [], ""
+    while True:
+        row = conn.execute("SELECT MIN(category) FROM media_tags WHERE category > ?",
+                           (last,)).fetchone()
+        if row is None or row[0] is None:
+            return cats or ["character", "general", "rating", "genre"]
+        last = row[0]
+        cats.append(last)
+
+
 def files_for_tag(conn: sqlite3.Connection, tag, limit=5000):
     """(root, path) for everything carrying one tag, best confidence first -
     so a pool's cover picture is the clearest example of the character rather
@@ -873,12 +887,20 @@ def files_for_tag(conn: sqlite3.Connection, tag, limit=5000):
     if not tags:
         return []
     holes = ",".join("?" * len(tags))
+    # Starts from the tag index, never from the media table. The only index
+    # on a tag is (category, tag), which the planner will not use without a
+    # category, so it walked all 1.3M files and probed each one's tags:
+    # hatsune_miku took 60 s every time, 2.2 s cold and 55 ms warm this way
+    # (2026-11-10, same 8,958 files). CROSS JOIN pins the order.
+    cats = tag_categories(conn)
+    cat_holes = ",".join("?" * len(cats))
     rows = conn.execute(
         "SELECT m.root AS root, m.path AS path, MAX(t.p) AS p"
-        " FROM media_tags t JOIN media m ON m.id = t.media_id"
-        " WHERE t.tag IN (" + holes + ") AND m.trashed IS NULL"
+        " FROM media_tags t CROSS JOIN media m ON m.id = t.media_id"
+        " WHERE t.category IN (" + cat_holes + ") AND t.tag IN (" + holes + ")"
+        " AND m.trashed IS NULL"
         " GROUP BY m.root, m.path ORDER BY p DESC LIMIT ?",
-        tags + [limit]).fetchall()
+        cats + tags + [limit]).fetchall()
     return [(r["root"], r["path"]) for r in rows]
 
 

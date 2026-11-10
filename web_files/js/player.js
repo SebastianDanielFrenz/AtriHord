@@ -932,6 +932,8 @@ function renderInfoPanel(info) {
     ['Folder', `${info.root_name || ''}${info.folder ? ' / ' + info.folder : ''}`],
     ['Type', info.type],
     ['Content', formatContentLevel(info.content)],
+    ['Caption', info.ai ? info.ai.caption : null],
+    ['Text in picture', info.ai ? info.ai.ocr : null],
     ['Size', formatFileSize(info.size)],
     ['Dimensions', dims],
     ['Duration', formatDuration(info.duration)],
@@ -950,7 +952,8 @@ function renderInfoPanel(info) {
     ['Created', formatDateTime(info.modified)],
     ['Downloaded', formatDateTime(info.added)],
     ['Video ID', info.source_id],
-    ['Tags', (info.tags && info.tags.length) ? info.tags.join(', ') : 'none yet'],
+    ['Tags', info.ai ? (info.ai.tagged ? null : 'not analysed yet')
+      : ((info.tags && info.tags.length) ? info.tags.join(', ') : 'none yet')],
   ].filter(([, value]) => value !== null && value !== undefined && value !== '');
 
   panel.innerHTML = '';
@@ -1056,6 +1059,103 @@ function renderInfoPanel(info) {
     table.appendChild(dd);
   }
   panel.appendChild(table);
+  renderAiSections(panel, info.ai);
+}
+
+// What the AI index found in the file (user, 2026-11-10: "add tags, faces,
+// characters"): one circle per character and per face, as in the Characters
+// and People overviews, and the tags as chips. On the library page a click
+// browses that character's pool, that person's files or that tag; elsewhere
+// (the share page) they are shown only.
+function infoBrowseHandler(fn) {
+  return (e) => {
+    e.stopPropagation();
+    if (typeof closeMediaPreview === 'function') closeMediaPreview(true);
+    fn();
+  };
+}
+
+function infoCircle(src, label, sub, title, emoji, onClick) {
+  const item = document.createElement(onClick ? 'button' : 'div');
+  item.className = 'media-info-circle';
+  if (onClick) { item.type = 'button'; item.addEventListener('click', onClick); }
+  if (title) item.title = title;
+  const art = document.createElement('span');
+  art.className = 'media-info-circle-art';
+  if (src) {
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.alt = '';
+    img.src = src;
+    img.addEventListener('error', () => { art.textContent = emoji; }, { once: true });
+    art.appendChild(img);
+  } else {
+    art.textContent = emoji;
+  }
+  const name = document.createElement('span');
+  name.className = 'media-info-circle-name';
+  name.textContent = label;
+  item.append(art, name);
+  if (sub) {
+    const s = document.createElement('span');
+    s.className = 'media-info-circle-sub';
+    s.textContent = sub;
+    item.appendChild(s);
+  }
+  return item;
+}
+
+function infoAiBlock(panel, title, cls) {
+  const h = document.createElement('div');
+  h.className = 'media-info-ai-title';
+  h.textContent = title;
+  const box = document.createElement('div');
+  box.className = cls;
+  panel.append(h, box);
+  return box;
+}
+
+function renderAiSections(panel, ai) {
+  if (!ai || !ai.indexed) return;
+  const onLibrary = typeof browseTag === 'function';
+  const pct = (p) => `${Math.round((p || 0) * 100)}%`;
+  if (ai.characters && ai.characters.length) {
+    const box = infoAiBlock(panel, 'Characters', 'media-info-circles');
+    for (const c of ai.characters) {
+      const src = c.cover && typeof thumbnailUrlFor === 'function' ? thumbnailUrlFor(c.cover) : null;
+      const click = onLibrary && typeof browseCharacter === 'function'
+        ? infoBrowseHandler(() => browseCharacter(c)) : null;
+      box.appendChild(infoCircle(src, c.label, c.series, `${c.tag.replace(/_/g, ' ')} · ${pct(c.p)}`,
+        '\u{1F3AD}', click));
+    }
+  }
+  if (ai.faces && ai.faces.length) {
+    const box = infoAiBlock(panel, 'Faces', 'media-info-circles');
+    for (const f of ai.faces) {
+      const named = f.name || (f.cluster_id === null ? 'Not grouped' : 'Unnamed');
+      const click = onLibrary && f.cluster_id !== null && typeof browsePerson === 'function'
+        ? infoBrowseHandler(() => browsePerson({ id: f.cluster_id, name: f.name })) : null;
+      box.appendChild(infoCircle(`/api/media/face/${f.id}/thumb`, named, null,
+        click ? 'Show every file with this person' : '', '\u{1F464}', click));
+    }
+  } else if (!ai.faces_done) {
+    const box = infoAiBlock(panel, 'Faces', 'media-info-ai-empty');
+    box.textContent = 'not analysed yet';
+  }
+  if (ai.tags && ai.tags.length) {
+    const box = infoAiBlock(panel, 'Tags', 'media-info-chips');
+    for (const [tag, p] of ai.tags) {
+      const chip = document.createElement(onLibrary ? 'button' : 'span');
+      chip.className = 'media-info-chip';
+      chip.textContent = tag.replace(/_/g, ' ');
+      chip.title = pct(p);
+      if (onLibrary) {
+        chip.type = 'button';
+        chip.addEventListener('click', infoBrowseHandler(() => browseTag(tag)));
+      }
+      box.appendChild(chip);
+    }
+  }
 }
 
 // The panel's button, the same on every page that has the preview.

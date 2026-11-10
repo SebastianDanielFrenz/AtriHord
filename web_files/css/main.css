@@ -3517,6 +3517,47 @@ td > .settings-badge:first-child { margin-left: 0; }
 .media-info-action:disabled { cursor: default; opacity: 0.75; }
 
 /* A one-line state in the details panel, e.g. why a picture was not upscaled. */
+/* The AI index's findings under the info list: one circle per character and
+   per face (the Characters / People overviews in small), the tags as chips. */
+.media-info-ai-title {
+  margin: 1rem 0 0.45rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.media-info-circles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 10px 8px;
+}
+.media-info-circle {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  min-width: 0; padding: 0; border: 0; background: none;
+  color: var(--ink); font: inherit; text-align: center;
+}
+button.media-info-circle { cursor: pointer; }
+.media-info-circle-art {
+  width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; font-size: 24px;
+  transition: border-color var(--dur) var(--ease);
+}
+.media-info-circle-art img { width: 100%; height: 100%; object-fit: cover; }
+button.media-info-circle:hover .media-info-circle-art,
+button.media-info-circle:focus-visible .media-info-circle-art { border-color: var(--accent); }
+.media-info-circle-name, .media-info-circle-sub {
+  width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.72rem; line-height: 1.25;
+}
+.media-info-circle-sub { color: var(--muted); }
+.media-info-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.media-info-chip {
+  padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface-2); color: var(--ink); font: inherit; font-size: 0.72rem;
+}
+button.media-info-chip { cursor: pointer; }
+button.media-info-chip:hover, button.media-info-chip:focus-visible { border-color: var(--accent); }
+.media-info-ai-empty { font-size: 0.8rem; color: var(--ink); }
+
 .media-info-note {
   margin: 0 0 0.7rem;
   font-size: 0.78rem;
@@ -3574,6 +3615,7 @@ td > .settings-badge:first-child { margin-left: 0; }
 /* A reference query is separate from the library and never creates a library upload. */
 .image-search-dialog { width: min(1200px, 94vw); max-height: 92vh; overflow-y: auto; margin: auto; padding: 1.5rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 16px; }
 .image-search-dialog::backdrop { background: rgba(0,0,0,.72); }
+.image-search-dialog.is-dropping { outline: 3px dashed var(--accent); outline-offset: -6px; }
 .image-search-head { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .image-search-head h2 { margin: 0 0 .5rem; }
 .image-search-head p, .image-search-query p { color: var(--muted); font-size: .86rem; line-height: 1.5; }

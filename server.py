@@ -28,6 +28,7 @@ from html import escape as html_escape
 import psutil
 import genre_map
 import media_ai
+import media_text_scan
 import media_dates
 import media_places
 import youtube_music_extractor as music_store
@@ -5153,6 +5154,8 @@ def media_rotation():
 SEARCH_MODES = ("filename", "ocr", "context", "character", "all")
 # The media_ai.SEARCH_COLUMNS key each AI search type reads.
 AI_SEARCH_COLUMNS = {"ocr": "ocr", "context": "context", "character": "tags", "all": "ai"}
+# Fewer word-index hits than this and the slow full read runs as well.
+TEXT_SCAN_BELOW = 50
 
 
 def ai_search_paths(query, mode, allowed_roots):
@@ -5171,6 +5174,17 @@ def ai_search_paths(query, mode, allowed_roots):
     try:
         conn = media_ai.connect(BASE_DIR)
         hits = media_ai.search(conn, query, column_mode)
+        # The word index finds whole words and word beginnings only. When it
+        # comes back short, every caption, OCR text and tag list is read once
+        # more for the words INSIDE other words ("0513" in "img_20240513"),
+        # about 2 s over the compact copy (media_text_scan, user 2026-11-10).
+        if len(hits) < TEXT_SCAN_BELOW:
+            try:
+                seen = set(hits)
+                hits = list(hits) + [h for h in media_text_scan.search(
+                    BASE_DIR, conn, query, column_mode) if h not in seen]
+            except Exception as exc:
+                print(f"[Warning] text scan unavailable: {exc}")
     except Exception as exc:
         # A missing or busy index must not take the search box down with it;
         # filename results still come back and the mode simply finds nothing.
@@ -5775,11 +5789,103 @@ def media_info():
             info["content"] = content
     if "video" in kinds_of(info["name"]):
         info["rotation"] = rotation_info(root_id, rel_path)
+    if set(kinds_of(info["name"])) & {"image", "video"}:
+        ai = ai_info(root_id, rel_path, {r["id"] for r in roots_for_user(user)})
+        if ai is not None:
+            info["ai"] = ai
     if "audio" in kinds_of(info["name"]):
         genres = genre_info(root_id, rel_path)
         if genres is not None:
             info["ai_genres"] = genres
     return jsonify(info)
+
+
+def ai_info(root_id, rel_path, allowed):
+    """What the AI index found in one picture or video, for the info panel
+    (user, 2026-11-10: "add tags, faces, characters"; one circle per face and
+    per character, like the People and Characters overviews).
+
+    {"indexed", "tagged", "faces_done", "caption", "ocr",
+     "characters": [pool item + "p"], "faces": [{"id", "cluster_id", "name"}],
+     "tags": [[tag, p]]}, or None when the index cannot be read.
+
+    A character arrives as the same pool item the Characters grid uses, so a
+    click browses her whole pool. Its cover is found per tag through the
+    (tag, p) index rather than media_ai.tag_pools, which also counts the pool:
+    2.5 s for hatsune_miku, too slow for a panel opened on every picture. The
+    count is left out (None). Faces: one per person - a video carries one face
+    per sampled frame - the clearest first; faces not in a person stay single.
+    """
+    try:
+        conn = media_ai.connect(BASE_DIR)
+        row = conn.execute(
+            "SELECT id, caption, ocr, tags, tag_model, face_model FROM media"
+            " WHERE root = ? AND path = ?", (root_id, rel_path)).fetchone()
+        if not row:
+            return {"indexed": False}
+        try:
+            tags = json.loads(row["tags"]) if row["tags"] else {}
+        except ValueError:
+            tags = {}
+        if not isinstance(tags, dict):
+            tags = {}
+
+        def by_p(entries):
+            return sorted((e for e in entries or [] if isinstance(e, dict) and e.get("tag")),
+                          key=lambda e: -(e.get("p") or 0))
+
+        chars = by_p(tags.get("character"))
+        vmap = media_ai.variant_map(conn)
+        keys, p_of = [], {}
+        for e in chars:
+            key = vmap.get(e["tag"], e["tag"])
+            p_of[key] = max(p_of.get(key, 0), e.get("p") or 0)
+            if key not in keys:
+                keys.append(key)
+
+        def first_cover(tag):
+            for r in conn.execute(
+                    "SELECT m.root, m.path FROM media_tags t CROSS JOIN media m ON m.id = t.media_id"
+                    " WHERE t.category = 'character' AND t.tag = ? AND m.trashed IS NULL"
+                    " ORDER BY t.p DESC LIMIT 20", (tag,)):
+                if r[0] in allowed:
+                    return (r[0], r[1])
+            return (None, None)
+
+        pools = []
+        for key in keys:
+            members = sorted(t for t, g in vmap.items() if g == key)
+            variants = [{"tag": t, "count": None, "cover": first_cover(t)}
+                        for t in members] if len(members) > 1 else []
+            pools.append({"tag": key, "count": None, "variants": variants,
+                          "cover": variants[0]["cover"] if variants else first_cover(key)})
+        hidden_keys, hidden_tags = charbl_hidden(conn)
+        pools = use_safe_covers(conn, charbl_filter_pools(pools, hidden_keys, hidden_tags), allowed)
+        characters = []
+        for pool in pools:
+            item = character_pool_item(pool, allowed)
+            item["p"] = round(p_of.get(pool["tag"], 0), 3)
+            characters.append(item)
+
+        faces, seen = [], set()
+        for f in conn.execute(
+                "SELECT f.id, f.cluster_id, c.name FROM faces f"
+                " LEFT JOIN clusters c ON c.id = f.cluster_id"
+                " WHERE f.media_id = ? ORDER BY f.quality DESC", (row["id"],)):
+            if f[1] is not None:
+                if f[1] in seen:
+                    continue
+                seen.add(f[1])
+            faces.append({"id": f[0], "cluster_id": f[1], "name": f[2] or None})
+
+        general = [[e["tag"], round(e.get("p") or 0, 3)] for e in by_p(tags.get("general"))]
+        return {"indexed": True, "tagged": bool(row["tag_model"]),
+                "faces_done": bool(row["face_model"]),
+                "caption": row["caption"] or None, "ocr": (row["ocr"] or "").strip() or None,
+                "characters": characters, "faces": faces, "tags": general}
+    except Exception as exc:
+        print(f"[Warning] AI info for {rel_path}: {exc}")
+        return None
 
 
 def genre_info(root_id, rel_path):

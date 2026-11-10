@@ -61,11 +61,34 @@
   }
   $('imageSearchBtn').addEventListener('click',()=>open());
   $('imageSearchClose').addEventListener('click',()=>dialog.close());dialog.addEventListener('close',stop);
-  $('imageSearchFile').addEventListener('change',event=>{
-    const file=event.target.files?.[0];if(!file)return;event.target.value='';
+  function useFile(file) {
+    if(!file)return;
+    if(file.type&&!file.type.startsWith('image/')){status('That is not a picture.');return;}
     if(file.size>8*1024*1024){status('Choose an image up to 8 MB.');return;}
     if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(file);reference(objectUrl);
-    const body=new FormData();body.append('image',file);search(body);
+    const body=new FormData();body.append('image',file,file.name||'pasted-image');search(body);
+  }
+  const firstImage=list=>Array.from(list||[]).find(f=>f&&f.type&&f.type.startsWith('image/'));
+  $('imageSearchFile').addEventListener('change',event=>{
+    const file=event.target.files?.[0];if(!file)return;event.target.value='';useFile(file);
+  });
+  // Paste (Ctrl+V) a copied picture while the dialog is open (user, 2026-11-09).
+  document.addEventListener('paste',event=>{
+    if(!dialog.open)return;
+    const items=Array.from(event.clipboardData?.items||[]).filter(i=>i.kind==='file'&&i.type.startsWith('image/'));
+    const file=items.length?items[0].getAsFile():firstImage(event.clipboardData?.files);
+    if(!file){status('The clipboard holds no picture. Copy an image, then paste.');return;}
+    event.preventDefault();useFile(file);
+  });
+  // Drop a picture file anywhere on the dialog.
+  const hasFiles=event=>Array.from(event.dataTransfer?.types||[]).includes('Files');
+  dialog.addEventListener('dragover',event=>{if(!hasFiles(event))return;event.preventDefault();event.dataTransfer.dropEffect='copy';dialog.classList.add('is-dropping');});
+  dialog.addEventListener('dragleave',event=>{if(event.target===dialog||!dialog.contains(event.relatedTarget))dialog.classList.remove('is-dropping');});
+  dialog.addEventListener('drop',event=>{
+    dialog.classList.remove('is-dropping');if(!hasFiles(event))return;event.preventDefault();
+    const file=firstImage(event.dataTransfer.files);
+    if(!file){status('Drop a picture file.');return;}
+    useFile(file);
   });
   $('imageSearchTypes').addEventListener('click',event=>{
     const button=event.target.closest('[data-match]');if(!button)return;category=button.dataset.match;limit=40;stop();
