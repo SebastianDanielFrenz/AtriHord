@@ -35,6 +35,7 @@
     drawerId: null,
     busy: false,
     indexAt: 0,
+    workersAt: 0,
     cookieAt: 0,
   };
   try { const t = localStorage.getItem("nxDlTab"); if (TABS.includes(t)) S.tab = t; } catch (e) { /* private mode */ }
@@ -371,7 +372,7 @@
     const w = d.worker || {};
     const bits = [state === "indexing" ? "indexing " + (d.current_task || "?")
       : state === "idle" ? "idle, checking for new files every few minutes"
-      : state === "waiting" ? "waiting for the worker's processing window" : "indexer stopped"];
+      : state === "waiting" ? "waiting (the reason is under Workers below)" : "indexer stopped"];
     if (!w.reachable) bits.push("worker unreachable");
     else if (w.loaded && w.loaded.length) bits.push("model: " + w.loaded.join(", "));
     else bits.push("models unloaded (idle)");
@@ -390,6 +391,100 @@
     if (d.people) found.push(nf.format(d.people) + " people");
     if (d.faces) found.push(nf.format(d.faces) + " faces");
     if (found.length) box.append(el("div", "nx-dl-note", found.join(" · ")));
+  }
+
+  // ---------------------------------------------------------------- workers: indexer, vision worker, 3D
+  // GET /api/media/worker-status (admin): this server reads its own files and asks the vision worker itself,
+  // so the worker's address and token never reach the page. Any part may be missing on a host.
+
+  function dur(seconds) {
+    const s = Math.max(0, Math.round(Number(seconds) || 0));
+    if (s < 90) return s + " s";
+    if (s < 5400) return Math.round(s / 60) + " min";
+    return (s / 3600).toFixed(1) + " h";
+  }
+  const WORKER_STATE = {
+    not_configured: "not configured", unreachable: "not reachable",
+    refused: "refused the access token", unavailable: "not offered by this worker",
+  };
+  const workerText = (w) => WORKER_STATE[w.state] || w.state || "?";
+
+  // A titled group: stat tiles, then plain note lines.
+  function wkGroup(box, title, tiles, notes) {
+    const g = el("div", "nx-dl-wk");
+    g.append(el("div", "nx-dl-wk-title", title));
+    if (tiles.length) {
+      const grid = el("div", "nx-dl-stats");
+      for (const [label, value] of tiles) {
+        const tile = el("div", "nx-dl-stat");
+        tile.append(el("div", "nx-dl-stat-l", label), el("div", "nx-dl-stat-v", String(value)));
+        grid.append(tile);
+      }
+      g.append(grid);
+    }
+    for (const note of notes) g.append(el("div", note.error ? "nx-dl-note nx-dl-note-error" : "nx-dl-note", note.text || note));
+    box.append(g);
+  }
+
+  function renderWorkers(d) {
+    const box = $("nxDlWorkers");
+    box.textContent = "";
+    const ix = d.indexer || {};
+    const notes = [];
+    const stateText = !ix.seen ? "no indexer has reported to this server"
+      : { stopped: "not running", waiting: "waiting", indexing: "indexing", idle: "idle" }[ix.state] || ix.state;
+    if (ix.state === "waiting") {
+      notes.push("Why it waits: " + (ix.why || "the worker gave no reason (outside its processing hours, or busy)"));
+      if (ix.retry_at) notes.push("Looks again in " + dur(ix.retry_at - Date.now() / 1000));
+    }
+    if (ix.beat_age_s != null) notes.push("Last heard from " + dur(ix.beat_age_s) + " ago");
+    wkGroup(box, "Indexer", [["State", stateText], ["Pass", ix.task || "-"],
+      ["Left in this sweep", ix.seen ? nf.format(ix.left || 0) : "-"],
+      ["Failed in this sweep", ix.seen ? nf.format(ix.failed || 0) : "-"]], notes);
+
+    const w = d.worker || {};
+    if (w.state !== "ok") {
+      wkGroup(box, "Vision worker", [], ["The worker is " + workerText(w) + (w.error && w.state !== "not_configured" ? " (" + w.error + ")" : "") + "."]);
+    } else {
+      const tg = w.tagger || {};
+      const t = d.tagging || {};
+      const wn = [];
+      if (w.windows) wn.push("Processing hours: " + w.windows);
+      wn.push("Tagger: " + (tg.id ? tg.id + (tg.source ? " (" + tg.source + ")" : "") : "not reported"));
+      if (t.total != null) {
+        wn.push("Tag progress: " + nf.format(t.done || 0) + " of " + nf.format(t.total) + " files carry " +
+          (t.model ? "the tagger " + t.model : "any tag stamp (the worker did not name its tagger)"));
+      }
+      if (w.last_error) wn.push({ text: "Last error: " + w.last_error, error: true });
+      wkGroup(box, "Vision worker", [["Paused", w.paused ? "yes" : "no"],
+        ["Models loaded", (w.loaded || []).join(", ") || "none"],
+        ["Idle for", w.idle_for_s != null ? dur(w.idle_for_s) : "-"],
+        ["Seconds per image", w.seconds_per_image != null ? w.seconds_per_image : "-"],
+        ["Upscales served", nf.format(w.upscales || 0)], ["Upscales waiting", nf.format(w.upscale_waiting || 0)],
+        ["VRAM in use", w.vram_allocated_mb != null ? nf.format(w.vram_allocated_mb) + " MB" : "-"]], wn);
+    }
+
+    const st = d.stereo || {};
+    const sw = st.worker || {};
+    const q = st.queue || {};
+    const qtext = q.state === "ok" ? (Object.entries(q.counts || {}).map(([k, n]) => nf.format(n) + " " + k).join(", ") || "nothing")
+      : q.state === "none" ? "no queue yet" : "unreadable (" + (q.error || "?") + ")";
+    if (!st.enabled && sw.state !== "ok") {
+      wkGroup(box, "3D conversion", [], ["Not in use on this server."]);
+    } else if (sw.state !== "ok") {
+      wkGroup(box, "3D conversion", [], ["The worker is " + workerText(sw) + ".", "Waiting in this server's queue: " + qtext]);
+    } else {
+      const run = sw.running;
+      const jobs = Object.entries(sw.counts || {}).map(([k, n]) => nf.format(n) + " " + k).join(", ");
+      wkGroup(box, "3D conversion", [["Running", run ? (run.label || run.kind || "job") : "nothing"],
+        ["Files in the job", run && run.files ? nf.format(run.files) : "-"],
+        ["Running for", run && run.running_s != null ? dur(run.running_s) : "-"],
+        ["Waiting on the worker", nf.format(sw.waiting || 0)],
+        ["Disk free there", sw.disk_free_gb != null ? sw.disk_free_gb + " GB" : "-"]],
+      ["Jobs on the worker: " + (jobs || "none"),
+        "New work may start: " + (sw.gate && sw.gate.open === false ? "no - " + (sw.gate.reason || "the worker did not say why") : "yes"),
+        "Waiting in this server's queue: " + qtext]);
+    }
   }
 
   // ---------------------------------------------------------------- cookies hint
@@ -434,6 +529,12 @@
           const i = await fetch("/api/media/indexing");
           if (i.ok) renderIndexing(await i.json());
           else $("nxDlIndex").textContent = "Indexing status unavailable.";
+        }
+        if (Date.now() - S.workersAt > 5000) {
+          S.workersAt = Date.now();
+          const wr = await fetch("/api/media/worker-status");
+          if (wr.ok) renderWorkers(await wr.json());
+          else $("nxDlWorkers").textContent = "Worker status unavailable.";
         }
       }
       if (Date.now() - S.cookieAt > 60000) checkCookies();
