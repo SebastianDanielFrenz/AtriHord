@@ -1027,6 +1027,10 @@ function renderInfoPanel(info) {
         // returns to wherever the preview was opened from.
         closeMediaPreview(true);
         if (searchModeActive) exitSearchMode({ keepEntry: true });
+        // A destination the shell shows over the folders (the Timeline is the landing page) must
+        // not stay on screen over the folder just opened: loadMedia below is history-less, which
+        // next-shell.js leaves alone, so without this the address changed and nothing moved.
+        if (typeof leaveShellDestination === 'function') leaveShellDestination();
         history.replaceState({ mediaPath: info.folder, mediaRoot: info.root || '' }, '', a.href);
         loadMedia(info.folder, false, info.root || '');
       });

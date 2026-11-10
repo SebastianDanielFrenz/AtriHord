@@ -87,6 +87,13 @@
     };
   }
 
+  // The viewer's info box opens a folder with a history-less loadMedia (it rewrites its own entry),
+  // which the wrapper above leaves alone: a search started over the Timeline (the landing page) then
+  // ended with the Timeline still on screen over the folder - the address changed and nothing moved.
+  window.leaveShellDestination = function () {
+    if (pseudo) { pseudo = null; syncNav(); }
+  };
+
   // The row that is active follows what is really on screen, not what was last clicked.
   function derivedDest() {
     if (currentView) return currentView;
