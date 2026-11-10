@@ -2892,11 +2892,17 @@ async function finishMerge(target) {
    because a bigger anchor can match people it could not before. "Not them"
    is remembered by the server, so a wrong guess does not come back.
 
-   A merge cannot be undone, so a match under the server's "likely" line asks
-   once before it merges; a likely one does not, because the point is speed. */
+   A merge cannot be undone, so a match under SIMILAR_CONFIRM_BELOW (72 %, the
+   owner's line) asks once before it merges; one at or above it does not,
+   because the point is speed. The bulk merge asks nothing: it is already a
+   review of every tile with a tick to take out, and only matches at or above
+   the likely line are in it. */
 
 let similarOpen = null;          // the panel's state, or null
 const SIMILAR_RETRY_MS = 1500;   // while the server builds its face index
+// "Same person" asks before merging only below this score (owner, 2026-11-10: 72 %);
+// at or above it the click merges. Independent of the green 'likely' line.
+const SIMILAR_CONFIRM_BELOW = 0.72;
 const SIMILAR_MAX_RETRIES = 80;
 
 const personLabel = (p) => p.name || p.auto_name || ('Person ' + p.id);
@@ -3122,7 +3128,6 @@ function exitBulk(st) {
 async function mergeBulk(st) {
   const picked = bulkPicked(st);
   if (!picked.length || st.busy) return;
-  if (!confirm(`Merge ${picked.length} people into "${personLabel(st.person)}"?\nThis cannot be undone.`)) return;
   st.busy = true;
   paintBulk(st);
   let failed = false;
@@ -3250,7 +3255,7 @@ async function mergeOne(st, item, card, bulk) {
 
 async function mergeSimilar(st, item, card) {
   const pct = Math.round(item.similarity * 100);
-  if (!item.likely && !confirm(`Only a ${pct}% match.\nMerge "${personLabel(item)}" into "${personLabel(st.person)}"?`)) return;
+  if (item.similarity < SIMILAR_CONFIRM_BELOW && !confirm(`Only a ${pct}% match.\nMerge "${personLabel(item)}" into "${personLabel(st.person)}"?`)) return;
   if (!(await mergeOne(st, item, card, false))) { alert('Could not merge those.'); return; }
   if (similarOpen !== st) return;
   paintSimilarHead(st);

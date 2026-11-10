@@ -31,7 +31,23 @@ class DiscoveryGrid {
     this.querySignature=this.signature();
     this.onPage([],false,this);this.onState('Loading…',this);return this.load(this.target());
   }
-  fill(){if(this.started&&this.visible()&&this.more&&!this.busy&&!this.retry&&this.items.length<this.target())this.load(this.target()-this.items.length);}
+  /* Whether the grid still has less than a screenful below the bottom of the view.
+     target() cannot answer that alone: it assumes every row is as tall as the FIRST
+     tile, and a character tile with a variants line is taller than one without. With
+     a first tile above the average, the estimate of rows needed falls behind the real
+     content at a fixed row count and scrolling stopped loading there for good, while
+     the Load more button (which skips the estimate) kept working. The real bottom of
+     the grid is measured instead; target() only sizes the request. */
+  near(){
+    const parent=this.grid.closest('[data-discovery-scroll]');
+    const bottom=parent ? Math.min(innerHeight,parent.getBoundingClientRect().bottom) : innerHeight;
+    return this.grid.getBoundingClientRect().bottom<bottom+innerHeight;
+  }
+  fill(){
+    if(!(this.started&&this.visible()&&this.more&&!this.busy&&!this.retry))return;
+    const short=this.target()-this.items.length;
+    if(short>0||this.near())this.load(Math.max(short,this.columns()*3));
+  }
   async load(wanted){
     if(this.busy||!this.more||!this.visible())return;
     const mine=this.version;this.busy=true;this.abort=new AbortController();this.grid.setAttribute('aria-busy','true');
@@ -45,10 +61,12 @@ class DiscoveryGrid {
         this.onState('Preparing the catalogue…',this);
         this.retry=setTimeout(()=>{this.retry=null;this.fill();},1000);return;
       }
-      const rows=data.items||[],append=this.offset>0;
+      const rows=data.items||[],append=this.offset>0,startOffset=this.offset;
       this.items.push(...rows);this.offset=data.next_offset??this.offset+rows.length;this.total=data.total??this.items.length;
       this.at=Date.now();
-      this.more=!!data.has_more;this.hiddenTotal=data.hidden_total||0;
+      // A page that moved nothing must not be asked for again by the scroll check, which
+      // would otherwise repeat the same request every frame.
+      this.more=!!data.has_more&&(rows.length>0||this.offset>startOffset);this.hiddenTotal=data.hidden_total||0;
       this.onPage(rows,append,this);this.onState('',this);
     }catch(e){if(mine===this.version&&e.name!=='AbortError'){this.onState(e.message,this);this.retry=-1;}}
     finally{if(mine===this.version){this.busy=false;this.grid.setAttribute('aria-busy','false');this.button.disabled=false;this.button.hidden=!this.more;this.schedule();}}
