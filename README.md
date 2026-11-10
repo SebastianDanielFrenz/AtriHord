@@ -5,6 +5,9 @@ Civitai, Bilibili, Instagram, ...), and browse the result as a photo/video/music
 people, search, shares, trash, upload, a VR viewer, 2D→3D conversion and smooth-motion video. An optional GPU
 **vision worker** tags, captions, OCRs, face-clusters and upscales the library.
 
+VR in Chrome on a PC with Steam Frame controllers needs a SteamVR binding, installed with one command:
+see [`vr-bindings/README.md`](vr-bindings/README.md).
+
 > Licence GPL-3.0-or-later. Read [`THIRD_PARTY.md`](THIRD_PARTY.md) first: some optional models are
 > **non-commercial only**, and smooth motion needs a proprietary DLL from Lossless Scaling you must obtain yourself.
 
