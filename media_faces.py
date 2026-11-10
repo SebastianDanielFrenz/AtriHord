@@ -26,6 +26,7 @@ from __future__ import annotations
 import collections
 import math
 import re
+import threading
 import time
 
 import numpy as np
@@ -670,3 +671,256 @@ def realness(conn):
                 else c["photo"] / judged > REAL_SHARE)
         out[cid] = {"real": real, **c, "judged": judged}
     return out
+
+
+# ---------------------------------------------------------------------------
+# Same-person suggestions
+# ---------------------------------------------------------------------------
+# Merging is the fix for the failure this library actually produces: one person
+# split over several tiles (recluster's own docstring says so). Finding the
+# other halves by eye means scrolling thousands of tiles, so for one tile this
+# ranks the OTHER tiles by how likely they are the same person and the page
+# offers them one click apart.
+#
+# The score is the face-by-face link already used to verify cross-account
+# merges (face_link): per face, its best match in the other cluster, the
+# median of those, the lower of the two directions. Measured on pairs judged by
+# eye (KSF-039): the same person 0.631-0.725, different cosplayers
+# 0.519-0.621. Nothing in this file changes how clusters are formed.
+#
+# TWO STAGES, because 9,800 clusters of >= 3 faces cannot each be scored with
+# 60 x 60 faces per request. (1) A resident index keeps each cluster's 8
+# sharpest faces; the source's 8 sharpest are matched against all of them in
+# one matrix product (the same median-best-match idea on a small sample) and
+# the best SUGGEST_SHORTLIST go on. (2) Those are scored exactly with up to
+# SUGGEST_FACES faces a side, read from the database.
+#
+# NOT CENTROIDS for stage 1: the module docstring and cluster_by_account both
+# record that the average of one cosplayer's faces drifts toward a generic
+# "cosplay face", so a centroid prefilter would drop exactly the people this
+# exists to find.
+SUGGEST_SAMPLE = 8            # sharpest faces per cluster kept in the index
+SUGGEST_PROBE = 8             # source faces used for the stage-1 match
+SUGGEST_SHORTLIST = 40        # clusters scored exactly
+SUGGEST_FACES = 60            # faces per side in the exact score
+SUGGEST_FLOOR = 0.50          # below this a pair is not offered
+SUGGEST_LIKELY = FACE_LINK_THRESHOLD   # at or above: "likely the same"
+SUGGEST_INDEX_TTL = 900.0     # seconds before the index is rebuilt behind a request
+_SUGGEST_CHUNK = 1500         # clusters per stage-1 matrix product (~37 MB of float32)
+
+
+def cluster_faces(conn, cluster_id, limit):
+    """(face ids, unit embeddings float32 [n, 512]) of a cluster's sharpest faces."""
+    rows = conn.execute(
+        "SELECT id, embedding FROM faces WHERE cluster_id = ?"
+        " AND embedding IS NOT NULL ORDER BY quality DESC LIMIT ?",
+        (cluster_id, int(limit))).fetchall()
+    ids, vecs = [], []
+    for r in rows:
+        vec = np.frombuffer(r["embedding"], dtype=np.float32)
+        if vec.size == 512:
+            ids.append(r["id"])
+            vecs.append(vec)
+    if not vecs:
+        return [], np.zeros((0, 512), dtype=np.float32)
+    mat = np.vstack(vecs).astype(np.float32)
+    norm = np.linalg.norm(mat, axis=1, keepdims=True)
+    norm[norm == 0] = 1.0
+    return ids, mat / norm
+
+
+def link_score(a, b, min_unit=FACE_LINK_MIN_UNIT):
+    """face_link on two embedding matrices.
+
+    A group smaller than min_unit is judged ONE way - its faces' best matches in
+    the bigger one - exactly as verify_across_accounts does: a best match found
+    among a handful of faces is lower by chance, so the reverse direction would
+    unfairly punish a small cluster. Two groups of min_unit or more are judged
+    both ways and the lower taken.
+    """
+    if not len(a) or not len(b):
+        return 0.0
+    if min(len(a), len(b)) < min_unit:
+        small, big = (a, b) if len(a) <= len(b) else (b, a)
+        return _median_best_match(small, big)
+    return min(_median_best_match(a, b), _median_best_match(b, a))
+
+
+class SuggestIndex:
+    """Resident sample of every cluster of at least min_size faces.
+
+    Built on a background thread (a few thousand small reads); a request that
+    arrives before it is ready gets nothing and asks again. A stale index keeps
+    answering while a fresh one is built. Memory: 8 faces x 512 float16 per
+    cluster, about 8 KB, so ~80 MB for 10,000 clusters.
+    """
+
+    def __init__(self, min_size=MIN_CLUSTER_SIZE, ttl=SUGGEST_INDEX_TTL):
+        self.min_size = min_size
+        self.ttl = ttl
+        self._lock = threading.RLock()
+        self._building = False
+        self._built_at = 0.0
+        self._error = None
+        self._ids = np.zeros(0, dtype=np.int64)
+        self._samples = np.zeros((0, SUGGEST_SAMPLE, 512), dtype=np.float16)
+        self._alive = np.zeros(0, dtype=bool)
+        self._pos = {}
+
+    # -- building -----------------------------------------------------------
+    def _sample_row(self, conn, cid):
+        _ids, vecs = cluster_faces(conn, cid, SUGGEST_SAMPLE)
+        row = np.zeros((SUGGEST_SAMPLE, 512), dtype=np.float16)
+        row[:len(vecs)] = vecs
+        return row, len(vecs)
+
+    def build(self, conn):
+        """Synchronous (re)build. Public so a test or a script can use it."""
+        cids = [r["id"] for r in conn.execute(
+            "SELECT id FROM clusters WHERE merged_into IS NULL AND face_count >= ?"
+            " AND COALESCE(hidden, 0) = 0 ORDER BY id", (self.min_size,))]
+        ids = np.zeros(len(cids), dtype=np.int64)
+        samples = np.zeros((len(cids), SUGGEST_SAMPLE, 512), dtype=np.float16)
+        alive = np.zeros(len(cids), dtype=bool)
+        for i, cid in enumerate(cids):
+            row, n = self._sample_row(conn, cid)
+            ids[i] = cid
+            samples[i] = row
+            alive[i] = n > 0
+        with self._lock:
+            self._ids, self._samples, self._alive = ids, samples, alive
+            self._pos = {int(c): i for i, c in enumerate(ids.tolist())}
+            self._built_at = time.time()
+            self._error = None
+
+    def ensure(self, connect):
+        """True when an index exists to answer from; starts a build when there is
+        none or it is stale. connect() must return a connection for the BUILD
+        thread (sqlite connections are per thread)."""
+        with self._lock:
+            have = self._built_at > 0
+            stale = time.time() - self._built_at > self.ttl
+            if (not have or stale) and not self._building:
+                self._building = True
+
+                def work():
+                    try:
+                        self.build(connect())
+                    except Exception as exc:          # noqa: BLE001
+                        with self._lock:
+                            self._error = str(exc)
+                        print("[Warning] face suggestion index: %s" % exc, flush=True)
+                    finally:
+                        with self._lock:
+                            self._building = False
+                threading.Thread(target=work, daemon=True,
+                                 name="face-suggest-index").start()
+            return have
+
+    def status(self):
+        with self._lock:
+            return {"building": self._building, "error": self._error,
+                    "clusters": int(self._alive.sum())}
+
+    def on_merge(self, conn, source, target):
+        """A merge moved `source`'s faces into `target`: forget the source and
+        re-sample the target, so the next request does not offer a cluster that
+        no longer exists or describe the target by its old faces."""
+        with self._lock:
+            i = self._pos.get(int(source))
+            if i is not None:
+                self._alive[i] = False
+            j = self._pos.get(int(target))
+        if j is not None:
+            row, n = self._sample_row(conn, int(target))
+            with self._lock:
+                self._samples[j] = row
+                self._alive[j] = n > 0
+
+    # -- querying -----------------------------------------------------------
+    def shortlist(self, probe, ok, limit=SUGGEST_SHORTLIST):
+        """Cluster ids best matching `probe` (unit rows) by the small-sample
+        score, for which ok(cluster_id) holds, best first."""
+        with self._lock:
+            n = len(self._ids)
+            if not n or not len(probe):
+                return []
+            probe = probe[:SUGGEST_PROBE].astype(np.float32)
+            scores = np.full(n, -1.0, dtype=np.float32)
+            for lo in range(0, n, _SUGGEST_CHUNK):
+                hi = min(n, lo + _SUGGEST_CHUNK)
+                block = self._samples[lo:hi].astype(np.float32)      # k, S, 512
+                sims = probe @ block.reshape(-1, 512).T              # m, k*S
+                best = sims.reshape(len(probe), hi - lo, SUGGEST_SAMPLE).max(axis=2)
+                scores[lo:hi] = np.median(best, axis=0)
+            scores[~self._alive] = -1.0
+            order = np.argsort(-scores)[:max(limit * 8, 200)]
+            ids = self._ids
+            out = []
+            for k in order.tolist():
+                if scores[k] < 0:
+                    break
+                cid = int(ids[k])
+                if ok(cid):
+                    out.append(cid)
+                    if len(out) >= limit:
+                        break
+            return out
+
+
+def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
+                        floor=SUGGEST_FLOOR):
+    """[(cluster id, link score)] best first: the clusters most likely to be the
+    same person as `cluster_id`, from the resident index then scored exactly.
+    `ok(cluster_id)` filters candidates (permissions, hidden, rejected pairs)."""
+    _ids, xs = cluster_faces(conn, cluster_id, SUGGEST_FACES)
+    if not len(xs):
+        return []
+    cluster_id = int(cluster_id)
+
+    def allowed(cid):
+        return cid != cluster_id and (ok is None or ok(cid))
+
+    scored = []
+    for cid in index.shortlist(xs, allowed):
+        _fids, ys = cluster_faces(conn, cid, SUGGEST_FACES)
+        s = link_score(xs, ys)
+        if s >= floor:
+            scored.append((cid, round(float(s), 4)))
+    scored.sort(key=lambda t: -t[1])
+    return scored[:limit]
+
+
+def _cover_of(conn, cluster_id):
+    row = conn.execute("SELECT cover_face FROM clusters WHERE id = ?",
+                       (int(cluster_id),)).fetchone()
+    return row["cover_face"] if row else None
+
+
+def record_not_same(conn, a, b):
+    """Remember that clusters a and b are different people. False when either has
+    no cover face to key the answer by."""
+    fa, fb = _cover_of(conn, a), _cover_of(conn, b)
+    if fa is None or fb is None or fa == fb:
+        return False
+    conn.execute("INSERT OR REPLACE INTO person_nomatch (face_a, face_b, decided_at)"
+                 " VALUES (?, ?, ?)", (min(fa, fb), max(fa, fb), time.time()))
+    conn.commit()
+    return True
+
+
+def rejected_clusters(conn, cluster_id):
+    """Ids of the live clusters already judged different from `cluster_id`."""
+    fx = _cover_of(conn, cluster_id)
+    if fx is None:
+        return set()
+    others = set()
+    for r in conn.execute("SELECT face_a, face_b FROM person_nomatch"
+                          " WHERE face_a = ? OR face_b = ?", (fx, fx)):
+        others.add(r["face_b"] if r["face_a"] == fx else r["face_a"])
+    if not others:
+        return set()
+    holes = ",".join("?" * len(others))
+    return {r["id"] for r in conn.execute(
+        "SELECT id FROM clusters WHERE merged_into IS NULL AND cover_face IN (%s)" % holes,
+        list(others))}

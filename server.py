@@ -8299,6 +8299,27 @@ def discovery_live_cover(conn, cover):
     if not cover: return None
     return cover if conn.execute('SELECT 1 FROM media location CROSS JOIN media live INDEXED BY media_trashed ON live.id=location.id WHERE location.root=? AND location.path=? AND live.trashed IS NULL', (cover['root'], cover['path'])).fetchone() else None
 
+def discovery_person_item(conn, cid, auto, real, allowed, levels):
+    """One People tile: name, live file count and a cover the viewer may see.
+
+    Shared by the grid and the same-person suggestions so a suggested tile is
+    drawn, and its cover chosen (a Safe picture where the person has one), by
+    exactly the code the grid uses. None when the cluster has no live file."""
+    row = conn.execute('SELECT c.id,c.name,c.cover_face,f.bbox,m.root,m.path, (SELECT COUNT(DISTINCT f2.media_id) FROM faces f2 JOIN media m2 INDEXED BY media_trashed ON m2.id=f2.media_id WHERE f2.cluster_id=c.id AND m2.trashed IS NULL) AS file_count FROM clusters c LEFT JOIN faces f ON f.id=c.cover_face LEFT JOIN media m ON m.id=f.media_id WHERE c.id=?', (cid,)).fetchone()
+    if not row or not row['file_count']: return None
+    cover = {'root':row['root'],'path':row['path'],'bbox':row['bbox'],'face_id':row['cover_face']} if row['root'] in allowed and row['path'] else None
+    cover = discovery_live_cover(conn, cover)
+    face_id = cover['face_id'] if cover else None
+    if levels and not (cover and cover_rank(levels,cover['root'],cover['path']) == 0):
+        pick = safe_person_cover(conn,cid,levels,allowed)
+        if pick:
+            _,face_id,bbox,root,path = pick
+            cover = {'root':root,'path':path,'bbox':bbox,'face_id':face_id}
+    guess = auto.get(str(cid),auto.get(cid,{}));judged = real.get(str(cid),real.get(cid,{}))
+    return {'id':cid,'name':row['name'],'count':row['file_count'],'cover':cover,'face_id':face_id,
+            'auto_name':guess.get('name'),'auto_share':guess.get('share'),'auto_accounts':guess.get('accounts',[]),
+            'real':judged.get('real'),'judged':judged.get('judged',0)}
+
 @app.route('/api/media/discovery/<kind>', methods=['GET'])
 def media_discovery(kind):
     user = get_authenticated_user()
@@ -8351,21 +8372,8 @@ def media_discovery(kind):
         info = discovery_catalogue.page_info(records, offset, limit)
         levels = content_levels_map(wait=False)
         for record in records[offset:offset+limit]:
-            cid = record['id']
-            row = conn.execute('SELECT c.id,c.name,c.cover_face,f.bbox,m.root,m.path, (SELECT COUNT(DISTINCT f2.media_id) FROM faces f2 JOIN media m2 INDEXED BY media_trashed ON m2.id=f2.media_id WHERE f2.cluster_id=c.id AND m2.trashed IS NULL) AS file_count FROM clusters c LEFT JOIN faces f ON f.id=c.cover_face LEFT JOIN media m ON m.id=f.media_id WHERE c.id=?', (cid,)).fetchone()
-            if not row or not row['file_count']: continue
-            cover = {'root':row['root'],'path':row['path'],'bbox':row['bbox'],'face_id':row['cover_face']} if row['root'] in allowed and row['path'] else None
-            cover = discovery_live_cover(conn, cover)
-            face_id = cover['face_id'] if cover else None
-            if levels and not (cover and cover_rank(levels,cover['root'],cover['path']) == 0):
-                pick = safe_person_cover(conn,cid,levels,allowed)
-                if pick:
-                    _,face_id,bbox,root,path = pick
-                    cover = {'root':root,'path':path,'bbox':bbox,'face_id':face_id}
-            guess = auto.get(str(cid),auto.get(cid,{}));judged = real.get(str(cid),real.get(cid,{}))
-            items.append({'id':cid,'name':row['name'],'count':row['file_count'],'cover':cover,'face_id':face_id,
-                          'auto_name':guess.get('name'),'auto_share':guess.get('share'),'auto_accounts':guess.get('accounts',[]),
-                          'real':judged.get('real'),'judged':judged.get('judged',0)})
+            item = discovery_person_item(conn, record['id'], auto, real, allowed, levels)
+            if item: items.append(item)
         info['hidden_total'] = hidden_total
     return jsonify({'items':items,'loading':False,**info,**service.status(kind)})
 
@@ -8548,9 +8556,100 @@ def media_person_update(cluster_id):
                      (target, time.time(), cluster_id))
         conn.commit()
         discovery_service().invalidate()
+        try:
+            face_suggest_index().on_merge(conn, cluster_id, target)
+        except Exception as exc:
+            print(f"[Warning] suggestion index after merge: {exc}")
         return jsonify({"ok": True, "merged": cluster_id, "into": target})
 
     return jsonify({"error": "send a name, a hidden, or a merge_into"}), 400
+
+
+_face_suggest_instance = None
+_face_suggest_lock = threading.Lock()
+
+def face_suggest_index():
+    global _face_suggest_instance
+    with _face_suggest_lock:
+        if _face_suggest_instance is None:
+            _face_suggest_instance = media_faces.SuggestIndex()
+        return _face_suggest_instance
+
+
+@app.route("/api/media/people/<int:cluster_id>/similar", methods=["GET"])
+def media_person_similar(cluster_id):
+    """The people most likely to be the same person as this one, best first.
+
+    Merging is how a split person is repaired, and finding the other halves by
+    scrolling the grid is the slow part - so this offers them (see
+    media_faces.suggest_same_person for the score and its measured meaning).
+    Read-only; the merge itself is the existing admin POST. `loading` is true
+    while the resident index or the People snapshot is still being built, and
+    the page asks again."""
+    user = get_authenticated_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        limit = min(30, max(1, int(request.args.get("limit") or 12)))
+    except ValueError:
+        return jsonify({"error": "Invalid limit"}), 400
+    conn = media_ai.connect(BASE_DIR)
+    if conn.execute("SELECT 1 FROM clusters WHERE id=? AND merged_into IS NULL",
+                    (cluster_id,)).fetchone() is None:
+        return jsonify({"error": "no such person"}), 404
+    service = discovery_service()
+    snapshot = service.get("people", discovery_people_build)
+    index = face_suggest_index()
+    ready = index.ensure(lambda: media_ai.connect(BASE_DIR))
+    if snapshot is None or not ready:
+        return jsonify({"items": [], "loading": True, **index.status()})
+
+    allowed = {r["id"] for r in roots_for_user(user)}
+    auto, real, roots = snapshot["auto"], snapshot["real"], snapshot["roots"]
+    rejected = media_faces.rejected_clusters(conn, cluster_id)
+    hidden = {r["id"] for r in conn.execute(
+        "SELECT id FROM clusters WHERE COALESCE(hidden,0)=1")}
+
+    def candidate_ok(cid):
+        # The grid's own rules: a person the viewer has no file of is not
+        # offered, nor is a hidden one or one judged to be drawn.
+        if cid in rejected or cid in hidden:
+            return False
+        if not allowed.intersection(roots.get(str(cid), roots.get(cid, []))):
+            return False
+        return real.get(str(cid), real.get(cid, {})).get("real") is not False
+
+    found = media_faces.suggest_same_person(conn, index, cluster_id,
+                                            ok=candidate_ok, limit=limit)
+    levels = content_levels_map(wait=False)
+    items = []
+    for cid, score in found:
+        item = discovery_person_item(conn, cid, auto, real, allowed, levels)
+        if item:
+            item["similarity"] = score
+            item["likely"] = score >= media_faces.SUGGEST_LIKELY
+            items.append(item)
+    source = discovery_person_item(conn, cluster_id, auto, real, allowed, levels)
+    return jsonify({"items": items, "loading": False, "source": source,
+                    "likely_at": media_faces.SUGGEST_LIKELY})
+
+
+@app.route("/api/media/people/<int:cluster_id>/not_same", methods=["POST"])
+@require_admin
+def media_person_not_same(cluster_id):
+    """Record that two people are different, so the suggestions stop offering
+    the pair (media_faces.record_not_same)."""
+    body = request.get_json(silent=True) or {}
+    try:
+        other = int(body.get("other"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "send the other person as `other`"}), 400
+    if other == cluster_id:
+        return jsonify({"error": "a person is the same as themselves"}), 400
+    conn = media_ai.connect(BASE_DIR)
+    if not media_faces.record_not_same(conn, cluster_id, other):
+        return jsonify({"error": "no such person"}), 404
+    return jsonify({"ok": True})
 
 
 @app.route("/api/media/people/<int:cluster_id>/files", methods=["GET"])

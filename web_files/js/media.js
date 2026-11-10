@@ -2702,6 +2702,7 @@ async function openPeople({ reload = false } = {}) {
 
 function closePeople() {
   cancelMerge();
+  closeSimilar(false);
   closeBrowseView();
 }
 
@@ -2800,7 +2801,13 @@ function personTile(person) {
     ? 'Unhide' : 'Hide';
   hide.title = 'Keep this face out of the grid - the files are untouched';
   hide.addEventListener('click', (ev) => { ev.stopPropagation(); hidePerson(person, tile); });
-  tools.append(rename, merge, hide);
+  const similar = document.createElement('button');
+  similar.type = 'button';
+  similar.className = 'btn btn-quiet';
+  similar.textContent = 'Similar';
+  similar.title = 'Show the faces that may be the same person, to merge them';
+  similar.addEventListener('click', (ev) => { ev.stopPropagation(); openSimilar(person); });
+  tools.append(rename, merge, similar, hide);
 
   tile.append(art, name, meta, tools);
   tile.addEventListener('click', () => {
@@ -2871,6 +2878,256 @@ async function finishMerge(target) {
   // may hand the target a name, and guessing at that here would drift.
   await openPeople({ reload: true });
 }
+
+/* ---------------------------------------------------------------------------
+   Same-person suggestions
+   ---------------------------------------------------------------------------
+   Merging fixes a person split over several tiles, but finding the other
+   halves by scrolling the grid is the slow part. "Similar" on a tile opens a
+   panel listing the tiles most likely to be the same person (the server ranks
+   them, see media_faces.suggest_same_person), each one click from merged.
+
+   The panel keeps the tile you started from as the anchor: a merge folds the
+   suggestion INTO it, the anchor grows, and the list is asked for again,
+   because a bigger anchor can match people it could not before. "Not them"
+   is remembered by the server, so a wrong guess does not come back.
+
+   A merge cannot be undone, so a match under the server's "likely" line asks
+   once before it merges; a likely one does not, because the point is speed. */
+
+let similarOpen = null;          // the panel's state, or null
+const SIMILAR_RETRY_MS = 1500;   // while the server builds its face index
+const SIMILAR_MAX_RETRIES = 80;
+
+const personLabel = (p) => p.name || p.auto_name || ('Person ' + p.id);
+
+function openSimilar(person) {
+  cancelMerge();
+  closeSimilar(false);
+  const overlay = document.createElement('div');
+  overlay.className = 'similar-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Possible matches for ' + personLabel(person));
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeSimilar(true); });
+
+  const panel = document.createElement('div');
+  panel.className = 'similar-panel';
+
+  const head = document.createElement('div');
+  head.className = 'similar-head';
+  const anchorArt = document.createElement('div');
+  anchorArt.className = 'similar-anchor-cover';
+  const titles = document.createElement('div');
+  titles.className = 'similar-titles';
+  const title = document.createElement('div');
+  title.className = 'similar-title';
+  const sub = document.createElement('div');
+  sub.className = 'similar-sub';
+  titles.append(title, sub);
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'btn btn-quiet';
+  close.textContent = 'Done';
+  close.addEventListener('click', () => closeSimilar(true));
+  head.append(anchorArt, titles, close);
+
+  const status = document.createElement('div');
+  status.className = 'similar-status';
+  status.setAttribute('role', 'status');
+  const grid = document.createElement('div');
+  grid.className = 'similar-grid';
+  panel.append(head, status, grid);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+
+  const st = { id: person.id, person: { ...person }, overlay, anchorArt, title, sub,
+               status, grid, close, merged: 0, seq: 0, retries: 0, timer: null };
+  similarOpen = st;
+  paintSimilarHead(st);
+  setSimilarStatus(st, 'Looking for matches…');
+  close.focus();
+  loadSimilar(st);
+}
+
+function paintSimilarHead(st) {
+  const p = st.person;
+  st.anchorArt.textContent = '';
+  if (p.face_id) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = '/api/media/face/' + p.face_id + '/thumb';
+    img.addEventListener('error', () => { st.anchorArt.textContent = '\u{1F464}'; }, { once: true });
+    st.anchorArt.appendChild(img);
+  } else {
+    st.anchorArt.textContent = '\u{1F464}';
+  }
+  st.title.textContent = 'Same person as ' + personLabel(p) + '?';
+  st.sub.textContent = p.count.toLocaleString('en-GB') + ' photos'
+    + (st.merged ? ` · ${st.merged} merged in` : '');
+}
+
+function setSimilarStatus(st, text) {
+  st.status.textContent = text;
+}
+
+async function loadSimilar(st) {
+  const seq = ++st.seq;
+  clearTimeout(st.timer);
+  let data;
+  try {
+    const res = await fetch('/api/media/people/' + st.id + '/similar?limit=12');
+    if (!res.ok) throw new Error(String(res.status));
+    data = await res.json();
+  } catch (e) {
+    if (similarOpen === st && seq === st.seq) setSimilarStatus(st, 'Could not look for matches.');
+    return;
+  }
+  if (similarOpen !== st || seq !== st.seq) return;     // closed, or a newer ask is out
+  if (data.loading) {
+    // The server builds its face index on first use (seconds) and the People
+    // snapshot behind it; ask again rather than show an empty list as an answer.
+    setSimilarStatus(st, 'Getting the faces ready…');
+    if (st.retries++ < SIMILAR_MAX_RETRIES) {
+      st.timer = setTimeout(() => loadSimilar(st), SIMILAR_RETRY_MS);
+    } else {
+      setSimilarStatus(st, 'Still getting the faces ready — try again in a minute.');
+    }
+    return;
+  }
+  st.retries = 0;
+  if (data.source) {
+    st.person = { ...st.person, ...data.source };
+    paintSimilarHead(st);
+  }
+  renderSimilar(st, data.items || []);
+}
+
+function renderSimilar(st, items) {
+  st.grid.textContent = '';
+  for (const item of items) st.grid.appendChild(similarCard(st, item));
+  refreshSimilarStatus(st);
+}
+
+function refreshSimilarStatus(st) {
+  const n = st.grid.children.length;
+  setSimilarStatus(st, n
+    ? `${n} possible ${n === 1 ? 'match' : 'matches'}, best first`
+    : (st.merged ? 'No more matches.' : 'No other face looks like this one.'));
+}
+
+function similarCard(st, item) {
+  const card = document.createElement('div');
+  card.className = 'similar-card' + (item.likely ? ' is-likely' : '');
+  card.dataset.id = item.id;
+
+  const art = document.createElement('div');
+  art.className = 'similar-cover';
+  if (item.face_id) {
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.alt = '';
+    img.src = '/api/media/face/' + item.face_id + '/thumb';
+    img.addEventListener('error', () => { art.textContent = '\u{1F464}'; }, { once: true });
+    art.appendChild(img);
+  } else {
+    art.textContent = '\u{1F464}';
+  }
+
+  const pct = Math.round(item.similarity * 100);
+  const score = document.createElement('div');
+  score.className = 'similar-score';
+  score.textContent = pct + '% match';
+  score.title = item.likely
+    ? 'Faces of the two tiles match as well as faces of one person usually do'
+    : 'Weaker than a usual match of one person — look before merging';
+
+  const name = document.createElement('div');
+  name.className = 'person-name' + (item.name ? '' : (item.auto_name ? ' is-auto' : ' is-unnamed'));
+  name.textContent = item.name || item.auto_name || 'Unnamed';
+  const meta = document.createElement('div');
+  meta.className = 'person-meta';
+  meta.textContent = item.count.toLocaleString('en-GB') + ' photos';
+
+  const actions = document.createElement('div');
+  actions.className = 'similar-actions';
+  const same = document.createElement('button');
+  same.type = 'button';
+  same.className = 'btn similar-same';
+  same.textContent = 'Same person';
+  const no = document.createElement('button');
+  no.type = 'button';
+  no.className = 'btn btn-quiet';
+  no.textContent = 'Not them';
+  same.addEventListener('click', () => mergeSimilar(st, item, card));
+  no.addEventListener('click', () => rejectSimilar(st, item, card));
+  actions.append(same, no);
+
+  card.append(art, score, name, meta, actions);
+  return card;
+}
+
+function setCardBusy(card, busy) {
+  card.classList.toggle('is-busy', busy);
+  card.querySelectorAll('button').forEach((b) => { b.disabled = busy; });
+}
+
+async function mergeSimilar(st, item, card) {
+  const pct = Math.round(item.similarity * 100);
+  if (!item.likely && !confirm(`Only a ${pct}% match.\nMerge "${personLabel(item)}" into "${personLabel(st.person)}"?`)) return;
+  setCardBusy(card, true);
+  let res;
+  try {
+    res = await fetch('/api/media/people/' + item.id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merge_into: st.id }),
+    });
+  } catch (e) { res = null; }
+  if (!res || !res.ok) { setCardBusy(card, false); alert('Could not merge those.'); return; }
+  if (similarOpen !== st) return;
+  card.remove();
+  st.merged += 1;
+  st.person.count += item.count;
+  // The server keeps whichever name exists, so an unnamed anchor takes the name.
+  if (!st.person.name && item.name) st.person.name = item.name;
+  paintSimilarHead(st);
+  refreshSimilarStatus(st);
+  // The anchor is bigger now and may match people it could not before.
+  loadSimilar(st);
+}
+
+async function rejectSimilar(st, item, card) {
+  setCardBusy(card, true);
+  let res;
+  try {
+    res = await fetch('/api/media/people/' + st.id + '/not_same', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ other: item.id }),
+    });
+  } catch (e) { res = null; }
+  if (!res || !res.ok) { setCardBusy(card, false); alert('Could not save that.'); return; }
+  card.remove();
+  if (similarOpen === st) refreshSimilarStatus(st);
+}
+
+function closeSimilar(reload) {
+  const st = similarOpen;
+  if (!st) return;
+  similarOpen = null;
+  clearTimeout(st.timer);
+  st.overlay.remove();
+  // The grid still shows the merged-away tiles and the old count.
+  if (reload && st.merged) openPeople({ reload: true });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && similarOpen) {
+    e.stopPropagation();
+    closeSimilar(true);
+  }
+}, true);
 
 /* Rebuild activePool from a tag list that arrived in a URL rather than from a
    click - a reload, a shared link, or a Back press out of a costume.

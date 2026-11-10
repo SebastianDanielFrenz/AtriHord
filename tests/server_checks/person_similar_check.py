@@ -1,0 +1,334 @@
+"""Same-person suggestions for the People grid. Out of the media_faces.py /
+media_ai.py next to a server.py, over a temp AI store with SYNTHETIC face
+embeddings (nothing here touches the live library or the vision worker):
+
+  - the score (media_faces.link_score) and the two-stage search
+    (SuggestIndex.shortlist + suggest_same_person): the same person split over
+    clusters of 40, 12 and 4 faces is found from any of them, a different
+    person, a look-alike and 400 strangers are not;
+  - the rejection memory (record_not_same / rejected_clusters) and the index
+    kept in step with a merge (SuggestIndex.on_merge);
+  - the real routes /api/media/people/<id>/similar, /not_same and the merge POST,
+    when Flask is importable (the media VM's venv has it).
+
+  venv/bin/python person_similar_check.py <server.py>
+"""
+import ast
+import os
+import shutil
+import sys
+import tempfile
+import time
+
+BASE = os.environ.get("ATRIHORD_DIR") or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SERVER = sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE, "server.py")
+sys.path.insert(0, BASE)
+sys.path.insert(0, os.path.dirname(os.path.abspath(SERVER)))
+tmp = tempfile.mkdtemp(prefix="person_similar_check_")
+os.environ["KSF_MEDIA_AI_DIR"] = os.path.join(tmp, "ai")
+os.makedirs(os.environ["KSF_MEDIA_AI_DIR"])
+import numpy as np                   # noqa: E402
+import media_ai                      # noqa: E402
+import media_faces                   # noqa: E402
+
+ok = True
+
+
+def check(label, cond, detail=""):
+    global ok
+    ok = ok and bool(cond)
+    print(("PASS " if cond else "FAIL ") + label + (f"  ({detail})" if detail and not cond else ""), flush=True)
+
+
+rng = np.random.default_rng(7)
+NOISE = 0.029          # per dimension: two faces of one person land near cosine 0.7
+
+
+def unit(v):
+    return v / np.linalg.norm(v)
+
+
+def face_of(base):
+    return unit(base + rng.normal(0, NOISE, 512)).astype(np.float32)
+
+
+conn = media_ai.connect(tmp)
+R = "downloads"
+face_ids = {}          # cluster id -> [face ids] best first
+
+
+def make_cluster(cid, base, n, hidden=0):
+    mid = conn.execute("INSERT INTO media (root, path, size, kind) VALUES (?, ?, 1, 'image')",
+                       (R, f"pixiv/{cid}/f.jpg")).lastrowid
+    ids = []
+    for k in range(n):
+        vec = face_of(base)
+        fid = conn.execute(
+            "INSERT INTO faces (media_id, bbox, embedding, cluster_id, quality) VALUES (?, '[0,0,9,9]', ?, ?, ?)",
+            (mid, vec.tobytes(), cid, 1.0 - k * 0.001)).lastrowid
+        ids.append(fid)
+    conn.execute("INSERT INTO clusters (id, name, cover_face, face_count, hidden) VALUES (?, NULL, ?, ?, ?)",
+                 (cid, ids[0], n, hidden))
+    face_ids[cid] = ids
+
+
+base_a = unit(rng.normal(size=512))
+base_b = unit(rng.normal(size=512))
+# A look-alike: shares 45 % of person A's direction, so face-to-face it lands
+# near cosine 0.3 - the kind of near miss the shortlist must not promote.
+base_d = unit(0.45 * base_a + 0.893 * unit(rng.normal(size=512)))
+make_cluster(1, base_a, 40)
+make_cluster(2, base_a, 12)
+make_cluster(3, base_a, 4)
+make_cluster(4, base_b, 30)
+make_cluster(5, base_d, 30)
+make_cluster(6, base_a, 12, hidden=1)          # the same person, but hidden
+for cid in range(100, 500):                    # 400 strangers
+    make_cluster(cid, unit(rng.normal(size=512)), int(rng.integers(3, 6)))
+conn.commit()
+STRANGERS = set(range(100, 500))
+
+# ---------------------------------------------------------------- the score --
+_, a1 = media_faces.cluster_faces(conn, 1, 60)
+_, a2 = media_faces.cluster_faces(conn, 2, 60)
+_, a3 = media_faces.cluster_faces(conn, 3, 60)
+_, b = media_faces.cluster_faces(conn, 4, 60)
+_, d = media_faces.cluster_faces(conn, 5, 60)
+s12, s13, s1b, s1d = (media_faces.link_score(a1, a2), media_faces.link_score(a1, a3),
+                      media_faces.link_score(a1, b), media_faces.link_score(a1, d))
+check("one person's two clusters score at or above the measured same-person line",
+      s12 >= media_faces.SUGGEST_LIKELY and s13 >= media_faces.SUGGEST_LIKELY, (s12, s13))
+check("a different person and a look-alike score under the offer floor",
+      s1b < media_faces.SUGGEST_FLOOR and s1d < media_faces.SUGGEST_FLOOR, (s1b, s1d))
+check("a 4-face cluster is judged one way (its best matches in the big one), not both",
+      abs(s13 - media_faces._median_best_match(a3, a1)) < 1e-9, s13)
+check("... and the reverse direction alone would score it lower, which is why",
+      media_faces._median_best_match(a1, a3) < s13, (media_faces._median_best_match(a1, a3), s13))
+check("an empty side scores 0", media_faces.link_score(a1, a1[:0]) == 0.0)
+
+# ------------------------------------------------------------------- search --
+index = media_faces.SuggestIndex()
+t0 = time.time()
+index.build(conn)
+build_s = time.time() - t0
+st = index.status()
+check("the index holds every live cluster of 3+ faces, not the hidden one",
+      st["clusters"] == 405, st)
+t0 = time.time()
+found = media_faces.suggest_same_person(conn, index, 1)
+ask_s = time.time() - t0
+ids = [c for c, _ in found]
+check("the other halves of person A are suggested, best first, nothing else",
+      set(ids) == {2, 3} and [s for _, s in found] == sorted((s for _, s in found), reverse=True), found)
+check("the hidden duplicate of A is not offered (it is not in the index)", 6 not in ids, ids)
+check("a different person, a look-alike and 400 strangers are not offered",
+      not ({4, 5} & set(ids)) and not (STRANGERS & set(ids)), ids)
+found3 = media_faces.suggest_same_person(conn, index, 3)
+check("a 4-face cluster finds the big halves of its own person",
+      {c for c, _ in found3} == {1, 2}, found3)
+found_b = media_faces.suggest_same_person(conn, index, 4)
+check("a person with no other half gets no suggestions", found_b == [], found_b)
+check("the source is never offered to itself", 1 not in [c for c, _ in media_faces.suggest_same_person(conn, index, 1, limit=30, floor=-1)])
+check("the ok filter removes a candidate before it is scored",
+      [c for c, _ in media_faces.suggest_same_person(conn, index, 1, ok=lambda c: c != 2)] == [3])
+check("a cluster id with no faces gets no suggestions", media_faces.suggest_same_person(conn, index, 9999) == [])
+check("limit and floor apply",
+      len(media_faces.suggest_same_person(conn, index, 1, limit=1)) == 1
+      and media_faces.suggest_same_person(conn, index, 1, floor=0.999) == [])
+print("info: index of 405 clusters built in %.2f s, one suggestion %.3f s" % (build_s, ask_s), flush=True)
+
+# ---------------------------------------------------------------- rejection --
+check("rejecting a pair is remembered", media_faces.record_not_same(conn, 1, 2) is True)
+check("... for both of them, whichever way round",
+      media_faces.rejected_clusters(conn, 1) == {2} and media_faces.rejected_clusters(conn, 2) == {1})
+check("... saying it twice changes nothing",
+      media_faces.record_not_same(conn, 2, 1) is True
+      and conn.execute("SELECT COUNT(*) FROM person_nomatch").fetchone()[0] == 1)
+check("a cluster that does not exist cannot be rejected", media_faces.record_not_same(conn, 1, 9999) is False)
+check("a rejected pair is filtered out of the suggestions when the caller passes the set",
+      [c for c, _ in media_faces.suggest_same_person(
+          conn, index, 1, ok=lambda c: c not in media_faces.rejected_clusters(conn, 1))] == [3])
+# A re-cluster renumbers every cluster (persist). The answer is keyed by the
+# cover faces, so it follows the people to their new ids.
+conn.execute("UPDATE clusters SET id = id + 1000 WHERE id IN (1, 2)")
+check("the answer survives a renumbering (it is keyed by cover face)",
+      media_faces.rejected_clusters(conn, 1001) == {1002}, media_faces.rejected_clusters(conn, 1001))
+conn.execute("UPDATE clusters SET id = id - 1000 WHERE id IN (1001, 1002)")
+conn.execute("DELETE FROM person_nomatch")
+conn.commit()
+
+# -------------------------------------------------------------------- merge --
+conn.execute("UPDATE faces SET cluster_id = 1 WHERE cluster_id = 2")
+conn.execute("UPDATE clusters SET merged_into = 1, face_count = 0 WHERE id = 2")
+conn.execute("UPDATE clusters SET face_count = 52 WHERE id = 1")
+conn.commit()
+index.on_merge(conn, 2, 1)
+after = media_faces.suggest_same_person(conn, index, 1)
+check("after a merge the merged cluster is no longer offered, the rest still are",
+      [c for c, _ in after] == [3], after)
+check("... nor is the merged cluster found as a candidate for anyone else",
+      2 not in [c for c, _ in media_faces.suggest_same_person(conn, index, 3)],
+      media_faces.suggest_same_person(conn, index, 3))
+check("on_merge on a cluster the index never held is harmless", index.on_merge(conn, 99999, 88888) is None)
+
+# ---------------------------------------------- background build and status --
+fresh = media_faces.SuggestIndex()
+check("an index that has not been built answers 'not ready' and starts building",
+      fresh.ensure(lambda: media_ai.connect(tmp)) is False)
+for _ in range(100):
+    if fresh.status()["clusters"] and not fresh.status()["building"]:
+        break
+    time.sleep(0.1)
+check("... and is ready a moment later, without blocking the caller",
+      fresh.ensure(lambda: media_ai.connect(tmp)) is True and fresh.status()["clusters"] == 404, fresh.status())
+
+# ------------------------------------------------------------------- routes --
+try:
+    import flask  # noqa: F401
+    have_flask = True
+except ImportError:
+    have_flask = False
+    print("skip: Flask is not importable here, the route checks run on the media VM", flush=True)
+
+if have_flask:
+    tree = ast.parse(open(SERVER, encoding="utf-8").read())
+    defs = {}
+    ns = {"__name__": "harness", "__file__": os.path.join(BASE, "server.py")}
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            try:
+                exec(compile(ast.Module(body=[node], type_ignores=[]), SERVER, "exec"), ns)
+            except Exception:
+                pass
+        elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            defs[node.name] = node
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    defs.setdefault(t.id, node)
+
+    def load(name):
+        exec(compile(ast.Module(body=[defs[name]], type_ignores=[]), SERVER, "exec"), ns)
+
+    def _names(code):
+        out = set(code.co_names)
+        for const in code.co_consts:
+            if hasattr(const, "co_names"):
+                out |= _names(const)
+        return out
+
+    def F(name, seen=None):
+        seen = set() if seen is None else seen
+        if name not in ns and name in defs and name not in seen:
+            seen.add(name)
+            for used in _names(compile(ast.Module(body=[defs[name]], type_ignores=[]), SERVER, "exec")):
+                if used not in ns:
+                    F(used, seen)
+            load(name)
+        return ns.get(name)
+
+    # A fresh store for the routes: the people snapshot is faked, so the rows
+    # the route reads (clusters, faces, media) are the ones above, re-merged.
+    ns["BASE_DIR"] = tmp
+    ns["DEFAULT_ROOT_ID"] = R
+    USER = {"username": "alice", "role": "admin"}
+    ns["get_authenticated_user"] = lambda: USER
+    ns["roots_for_user"] = lambda user: [{"id": R}]
+    ns["content_levels_map"] = lambda wait=False: None
+
+    class FakeService:
+        def __init__(self):
+            self.snapshot = None
+            self.invalidated = 0
+
+        def get(self, key, build):
+            return self.snapshot
+
+        def invalidate(self):
+            self.invalidated += 1
+
+    svc = FakeService()
+    ns["discovery_service"] = lambda: svc
+    F("app")
+    app = ns["app"]
+    for name in ("media_person_similar", "media_person_not_same", "media_person_update"):
+        F(name)
+
+    def get(path, fn="media_person_similar", **kw):
+        with app.test_request_context(path):
+            rv = ns[fn](kw["cid"])
+        return rv if isinstance(rv, tuple) else (rv, 200)
+
+    # Rebuild the situation: person A in 1 (52 faces after the merge above), 3.
+    roots = {str(c): [R] for c in list(range(1, 6)) + list(STRANGERS)}
+    svc.snapshot = {"auto": {}, "real": {}, "roots": roots}
+
+    svc.snapshot = None
+    rv, code = get("/api/media/people/1/similar", cid=1)
+    check("no People snapshot yet: loading, no items",
+          rv.get_json()["loading"] is True and rv.get_json()["items"] == [], rv.get_json())
+    svc.snapshot = {"auto": {}, "real": {}, "roots": roots}
+    for _ in range(200):
+        rv, code = get("/api/media/people/1/similar", cid=1)
+        if not rv.get_json()["loading"]:
+            break
+        time.sleep(0.1)
+    body = rv.get_json()
+    check("the route answers once the index is built", code == 200 and body["loading"] is False, body)
+    check("it offers person A's other half, with a score and the 'likely' flag, and the source",
+          [i["id"] for i in body["items"]] == [3] and body["items"][0]["similarity"] >= media_faces.SUGGEST_LIKELY
+          and body["items"][0]["likely"] is True and body["source"]["id"] == 1, body)
+    check("... as full People tiles (count, cover face)",
+          body["items"][0]["count"] >= 1 and body["items"][0]["face_id"] == face_ids[3][0], body["items"][0])
+    rv, code = get("/api/media/people/777/similar", cid=777)
+    check("an unknown person is a 404", code == 404, code)
+    rv, code = get("/api/media/people/2/similar", cid=2)
+    check("a merged-away person is a 404 too", code == 404, code)
+    ns["roots_for_user"] = lambda user: [{"id": "elsewhere"}]
+    rv, code = get("/api/media/people/1/similar", cid=1)
+    check("a viewer who has no file of a person is not offered them", rv.get_json()["items"] == [], rv.get_json())
+    ns["roots_for_user"] = lambda user: [{"id": R}]
+    svc.snapshot = {"auto": {}, "real": {"3": {"real": False, "judged": 9}}, "roots": roots}
+    rv, code = get("/api/media/people/1/similar", cid=1)
+    check("a person judged to be drawn is not offered (the grid hides them too)",
+          rv.get_json()["items"] == [], rv.get_json())
+    svc.snapshot = {"auto": {}, "real": {}, "roots": roots}
+
+    def post(path, payload, fn, cid):
+        with app.test_request_context(path, method="POST", json=payload):
+            rv = ns[fn](cid)
+        return rv if isinstance(rv, tuple) else (rv, 200)
+
+    rv, code = post("/api/media/people/1/not_same", {"other": 3}, "media_person_not_same", 1)
+    check("saying 'not the same' succeeds", code == 200 and rv.get_json() == {"ok": True}, (code, rv.get_json()))
+    rv, code = get("/api/media/people/1/similar", cid=1)
+    check("... and the pair is no longer offered", rv.get_json()["items"] == [], rv.get_json())
+    rv, code = get("/api/media/people/3/similar", cid=3)
+    check("... from either side", 1 not in [i["id"] for i in rv.get_json()["items"]], rv.get_json())
+    rv, code = post("/api/media/people/1/not_same", {"other": 1}, "media_person_not_same", 1)
+    check("a person cannot be 'not the same' as themselves", code == 400, code)
+    rv, code = post("/api/media/people/1/not_same", {}, "media_person_not_same", 1)
+    check("a body without `other` is a 400", code == 400, code)
+    rv, code = post("/api/media/people/1/not_same", {"other": 4242}, "media_person_not_same", 1)
+    check("an unknown other person is a 404", code == 404, code)
+    USER["role"] = "guest"
+    rv, code = post("/api/media/people/1/not_same", {"other": 3}, "media_person_not_same", 1)
+    check("only an admin can record it", code == 403, code)
+    rv, code = get("/api/media/people/1/similar", cid=1)
+    check("any signed-in user can read the suggestions", code == 200, code)
+    USER["role"] = "admin"
+    conn.execute("DELETE FROM person_nomatch")
+    conn.commit()
+
+    # The merge POST keeps the resident index in step: merge 3 into 1, and the
+    # next suggestion for anyone no longer offers 3.
+    rv, code = post("/api/media/people/3", {"merge_into": 1}, "media_person_update", 3)
+    check("the merge POST still merges", code == 200 and rv.get_json()["into"] == 1, (code, rv.get_json()))
+    check("... and invalidates the People snapshot", svc.invalidated == 1, svc.invalidated)
+    rv, code = get("/api/media/people/1/similar", cid=1)
+    check("... and the merged person is gone from the suggestions", rv.get_json()["items"] == [], rv.get_json())
+
+conn.close()
+shutil.rmtree(tmp, ignore_errors=True)
+print("ALL PASS" if ok else "SOME CHECKS FAILED")
+sys.exit(0 if ok else 1)

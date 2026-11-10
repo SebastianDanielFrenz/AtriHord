@@ -198,6 +198,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
       updated_at REAL
     );
 
+    -- "These two are NOT the same person", said by a person while merging, so
+    -- the suggestion list stops offering the pair. Keyed by the two clusters'
+    -- COVER FACES rather than their ids: a re-cluster renumbers every cluster
+    -- (media_faces.persist) and keeps names by matching on the cover face, so
+    -- the cover face is what survives it. face_a < face_b.
+    CREATE TABLE IF NOT EXISTS person_nomatch (
+      face_a     INTEGER NOT NULL,
+      face_b     INTEGER NOT NULL,
+      decided_at REAL,
+      PRIMARY KEY (face_a, face_b)
+    ) WITHOUT ROWID;
+
     -- One row per (file, tag). The same information is in media.tags as
     -- JSON, and that is what FTS searches - but "every character in the
     -- library, with a count" is a GROUP BY, and answering it by parsing

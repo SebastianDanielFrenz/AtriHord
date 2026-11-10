@@ -2403,6 +2403,56 @@ body.select-mode #mediaGrid img { pointer-events: none; }
 .person-tile.is-merge-source .person-cover {
   border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent);
 }
+
+/* Same-person suggestions (media.js openSimilar): a panel over the grid with the
+   tile you started from at the top and the tiles that may be the same person
+   below it, each one click from merged. */
+.similar-overlay {
+  position: fixed; inset: 0; z-index: 1000; display: flex;
+  align-items: center; justify-content: center; padding: 1rem;
+  background: rgba(0, 0, 0, 0.75);
+}
+.similar-panel {
+  width: 100%; max-width: 980px; max-height: 90vh; max-height: 90dvh;
+  display: flex; flex-direction: column; gap: 10px; padding: 1.1rem 1.25rem;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+}
+.similar-head { display: flex; align-items: center; gap: 14px; }
+.similar-anchor-cover {
+  width: 64px; height: 64px; flex: none; border-radius: 50%; overflow: hidden;
+  background: var(--surface-2); border: 2px solid var(--accent);
+  display: flex; align-items: center; justify-content: center; font-size: 26px;
+}
+.similar-anchor-cover img { width: 100%; height: 100%; object-fit: cover; }
+.similar-titles { flex: 1; min-width: 0; }
+.similar-title {
+  font-size: 1.05rem; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.similar-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.similar-status { font-size: 12.5px; color: var(--ink-2); min-height: 1.2em; }
+.similar-grid {
+  display: grid; gap: 14px; padding: 4px 2px; overflow-y: auto;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+.similar-card {
+  text-align: center; padding: 10px 8px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.similar-card.is-likely { border-color: var(--ok); }
+.similar-card.is-busy { opacity: 0.5; }
+.similar-cover {
+  width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; font-size: 30px;
+}
+.similar-cover img { width: 100%; height: 100%; object-fit: cover; }
+.similar-score { margin-top: 7px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.similar-card.is-likely .similar-score { color: var(--ok); }
+.similar-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+.similar-actions .btn { width: 100%; padding: 5px 8px; font-size: 12.5px; }
+.similar-actions .similar-same { font-weight: 600; }
 .review-prof-exempt {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
   font-size: 11.5px; color: var(--muted);
