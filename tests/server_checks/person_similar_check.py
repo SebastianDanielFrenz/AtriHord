@@ -127,6 +127,21 @@ check("... a cosplayer's matches (none at 0.75) keep the plain line, and none of
       and not any(s >= media_faces.SUGGEST_LIKELY for s in CHI_MUU + WELLCHANNEL))
 check("... under the strong line every correct Ortega match is likely, and 100 % of the cosplayers' would NOT be spared if they had a core",
       all(s >= media_faces.SUGGEST_LIKELY_STRONG for s in ORTEGA))
+# The main rule: a score is judged against the anchor's own background (mean/sd of
+# its exact scores against ~48 clusters of the crowd that is not it), measured live.
+SPANISH = (0.240, 0.039, [0.71, 0.65, 0.60, 0.60, 0.59, 0.54, 0.54, 0.54, 0.53, 0.53, 0.52, 0.52, 0.52, 0.52, 0.51])
+ORTEGA_BG = (0.112, 0.049, ORTEGA)
+CHI_MUU_BG = (0.462, 0.074, [0.69, 0.67, 0.64, 0.63, 0.62, 0.61, 0.60, 0.58, 0.56])
+WELL_BG = (0.482, 0.075, [0.71, 0.68, 0.67, 0.66, 0.65, 0.64, 0.63, 0.62, 0.60, 0.57, 0.55])
+Z = [media_faces.significance(s, m, sd) for m, sd, ss in (SPANISH, ORTEGA_BG) for s in ss]
+Zw = [media_faces.significance(s, m, sd) for m, sd, ss in (CHI_MUU_BG, WELL_BG) for s in ss]
+check("measured: every correct match is >= 6.8 sd above its anchor's background, every wrong cosplay one <= 3.2",
+      min(Z) >= 6.8 and max(Zw) <= 3.2, (min(Z), max(Zw)))
+check("the likely line (in sd) sits in that gap, so no observed correct match is missed and no observed wrong one is green",
+      max(Zw) < media_faces.SUGGEST_Z_LIKELY <= min(Z), (max(Zw), media_faces.SUGGEST_Z_LIKELY, min(Z)))
+check("... the same 0.60 score is likely for the Spanish cosplayer and nowhere near for @chi_muu",
+      media_faces.significance(0.60, 0.240, 0.039) >= media_faces.SUGGEST_Z_LIKELY
+      and media_faces.significance(0.60, 0.462, 0.074) < media_faces.SUGGEST_Z_LIKELY)
 check("counts, not one match: a few high scores alone are not enough, nor a crowd at 0.70 without a high core",
       media_faces.likely_line([0.85, 0.80, 0.76]) == media_faces.SUGGEST_LIKELY
       and media_faces.likely_line([0.85, 0.80] + [0.72] * 10) == media_faces.SUGGEST_LIKELY
@@ -163,12 +178,36 @@ check("a person with no other half gets no suggestions", found_b == [], found_b)
 # ------------------------------------------------ the line moves with the core --
 plain = media_faces.suggest_same_person(conn, index, 1)
 detail = media_faces.suggest_same_person(conn, index, 1, detail=True)
-check("detail=True: the same people, scores and order, 'likely' by the line the scores give, no cosplay field",
+check("detail=True: the same people, scores and order, each with z, bg and likely (z >= the line in sd), no cosplay field",
       [(d["id"], d["score"]) for d in detail] == plain and not any("cosplay" in d for d in detail)
-      and all(d["likely"] == (d["score"] >= media_faces.likely_line([s for _, s in plain])) for d in detail), detail)
-saved = (media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_CORE_MIN, media_faces.SUGGEST_LIKELY_STRONG, media_faces.SUGGEST_WIDE_MIN)
+      and all(d["z"] is not None and d["bg"] is not None for d in detail)
+      and all(d["likely"] == (d["z"] >= media_faces.SUGGEST_Z_LIKELY) for d in detail), detail)
+stats = media_faces.background_stats(conn, index, media_faces.cluster_faces(conn, 1, media_faces.SUGGEST_FACES)[1], 1)
+check("the background is measured on clusters that are not the source, with a floored sd",
+      stats is not None and stats[1] >= media_faces.SUGGEST_BG_SD_MIN and 0.0 <= stats[0] < 0.5, stats)
+bgids = index.background(media_faces.cluster_faces(conn, 1, media_faces.SUGGEST_FACES)[1], 1)
+check("... never the source, never a dead cluster, no repeats",
+      1 not in bgids and len(set(bgids)) == len(bgids) and not ({6} & set(bgids)), bgids)
+saved = (media_faces.SUGGEST_Z_LIKELY,)
+try:
+    media_faces.SUGGEST_Z_LIKELY = 1e9
+    check("a line nobody reaches: nothing is likely", not any(x["likely"] for x in media_faces.suggest_same_person(conn, index, 1, detail=True)))
+    media_faces.SUGGEST_Z_LIKELY = -1e9
+    check("a line everybody reaches: all are likely", all(x["likely"] for x in media_faces.suggest_same_person(conn, index, 1, detail=True)))
+finally:
+    media_faces.SUGGEST_Z_LIKELY, = saved
+
+# Fallback: where no background can be measured (too few clusters) the absolute
+# lines decide, and the line moves with the core and the crowd.
+saved = (media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_CORE_MIN, media_faces.SUGGEST_LIKELY_STRONG,
+         media_faces.SUGGEST_WIDE_MIN, media_faces.SUGGEST_BG_MIN)
 low, high = min(s for _, s in plain), max(s for _, s in plain)
 try:
+    media_faces.SUGGEST_BG_MIN = 10 ** 6
+    fb = media_faces.suggest_same_person(conn, index, 1, detail=True)
+    check("no measurable background: z and bg are None and the absolute line decides",
+          all(x["z"] is None and x["bg"] is None for x in fb)
+          and all(x["likely"] == (x["score"] >= media_faces.likely_line([s for _, s in plain])) for x in fb), fb)
     # plain line = the best score; strong line = under the lowest; two matches reach it.
     media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_LIKELY_STRONG, media_faces.SUGGEST_WIDE_MIN = high, low - 0.02, 2
     media_faces.SUGGEST_CORE_MIN = 2
@@ -182,7 +221,8 @@ try:
     d = media_faces.suggest_same_person(conn, index, 1, detail=True)
     check("... a core without the crowd (3 needed, 2 found): plain line again", [x["likely"] for x in d] == [True, False], d)
 finally:
-    media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_CORE_MIN, media_faces.SUGGEST_LIKELY_STRONG, media_faces.SUGGEST_WIDE_MIN = saved
+    (media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_CORE_MIN, media_faces.SUGGEST_LIKELY_STRONG,
+     media_faces.SUGGEST_WIDE_MIN, media_faces.SUGGEST_BG_MIN) = saved
 check("without detail the tuples and the plain floor are untouched",
       media_faces.suggest_same_person(conn, index, 1) == plain)
 check("a cosplay tag changes nothing (the tag marks Ortega's photos too)",
@@ -344,6 +384,10 @@ if have_flask:
           body["bulk_min"] == media_faces.SUGGEST_BULK_MIN
           and body["likely_at"] == body["bulk_at"] == media_faces.likely_line([i["similarity"] for i in body["items"]])
           and not any("cosplay" in i for i in body["items"]), body)
+    check("each tile carries its z (sd above the person's own background) and the page gets bg and the z line",
+          all(isinstance(i["z"], float) for i in body["items"]) and isinstance(body["bg"], float)
+          and body["z_likely"] == media_faces.SUGGEST_Z_LIKELY
+          and all(i["likely"] == (i["z"] >= media_faces.SUGGEST_Z_LIKELY) for i in body["items"]), body)
     check("... as full People tiles (count, cover face)",
           body["items"][0]["count"] >= 1 and body["items"][0]["face_id"] == face_ids[3][0], body["items"][0])
     rv, code = get("/api/media/people/777/similar", cid=777)
@@ -387,7 +431,7 @@ if have_flask:
     # The decision log: a JSONL file beside the index, never a table.
     log = os.path.join(media_ai.store_dir(tmp), "person_decisions.jsonl")
     check("no decision log before a decision", not os.path.exists(log))
-    good = {"other": 3, "decision": "merge", "score": 0.7812, "likely": True, "line": 0.7, "bulk": True}
+    good = {"other": 3, "decision": "merge", "score": 0.7812, "likely": True, "line": 0.7, "bulk": True, "z": 8.4, "bg": 0.24}
     rv, code = post("/api/media/people/1/decision", good, "media_person_decision", 1)
     check("a decision is logged", code == 200 and rv.get_json() == {"ok": True}, (code, rv.get_json()))
     rv, code = post("/api/media/people/1/decision", {**good, "decision": "not_same", "score": 0.66, "likely": False,
@@ -399,6 +443,8 @@ if have_flask:
           and rows[0]["score"] == 0.7812 and rows[0]["likely"] is True and rows[0]["bulk"] is True
           and rows[0]["user"] == "alice" and rows[1]["decision"] == "not_same" and rows[1]["line"] == 0.75 and rows[0]["line"] == 0.7
           and rows[1]["bulk"] is False and isinstance(rows[0]["at"], float), rows)
+    check("... and the z and background of the judgement (blank when the client had none)",
+          rows[0]["z"] == 8.4 and rows[0]["bg"] == 0.24, rows)
     for bad in ({**good, "decision": "delete"}, {**good, "score": 1.5}, {**good, "score": "x"},
                 {**good, "other": 1}, {**good, "line": 2}, {"decision": "merge", "score": 0.7}):
         rv, code = post("/api/media/people/1/decision", bad, "media_person_decision", 1)

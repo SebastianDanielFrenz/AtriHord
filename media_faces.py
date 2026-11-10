@@ -739,6 +739,26 @@ SUGGEST_LIKELY_STRONG = 0.70
 # what it is for; one or two high matches are better handled one by one.
 SUGGEST_BULK_MIN = 4
 SUGGEST_INDEX_TTL = 900.0     # seconds before the index is rebuilt behind a request
+# THE MAIN RULE: a score means little without the face it is measured on.
+# 2026-11-10, owner: "our system has europeans down" - the model separates some
+# faces far better than others, so one global line cannot be right. Measured on
+# the live library (each anchor against ~48 clusters from the crowd that is NOT
+# it - stage-1 ranks 60-1500, exact link scores; mean / sd):
+#   Spanish cosplayer 0.24 / 0.04   correct matches 0.51-0.71  = 6.8 to 12 sd up
+#   Jenna Ortega      0.11 / 0.05   correct matches 0.63-0.88  = 10.6 to 16 sd up
+#   @chi_muu          0.46 / 0.07   WRONG matches   0.56-0.69  = 1.3 to 3.0 sd up
+#   @wellchannel0214  0.48 / 0.08   WRONG matches   0.55-0.71  = 0.9 to 3.1 sd up
+# (25 random large clusters: background mean 0.20 - 0.52, most of them 0.38+.)
+# So a suggestion is 'likely' when it stands SUGGEST_Z_LIKELY (5) standard
+# deviations above its anchor's own background: the gap between the wrong (<= 3.1)
+# and the correct (>= 6.8). Where the background cannot be measured (fewer than
+# SUGGEST_BG_MIN clusters to sample) the absolute lines above are the fallback.
+SUGGEST_BG_FROM = 60          # background = stage-1 ranks FROM..TO, every STEP-th:
+SUGGEST_BG_TO = 1500          #   past the nearest 60, which can hold the person's own pieces
+SUGGEST_BG_STEP = 40
+SUGGEST_BG_MIN = 8
+SUGGEST_BG_SD_MIN = 0.03      # an unusually tight background must not inflate the score
+SUGGEST_Z_LIKELY = 5.0
 
 
 def likely_line(scores):
@@ -883,6 +903,35 @@ class SuggestIndex:
                 self._alive[j] = n > 0
 
     # -- querying -----------------------------------------------------------
+    def _stage1(self, probe):
+        """Small-sample score of every cluster against `probe` (caller holds the
+        lock); dead clusters score -1."""
+        n = len(self._ids)
+        probe = probe[:SUGGEST_PROBE].astype(np.float32)
+        scores = np.full(n, -1.0, dtype=np.float32)
+        for lo in range(0, n, _SUGGEST_CHUNK):
+            hi = min(n, lo + _SUGGEST_CHUNK)
+            block = self._samples[lo:hi].astype(np.float32)      # k, S, 512
+            sims = probe @ block.reshape(-1, 512).T              # m, k*S
+            best = sims.reshape(len(probe), hi - lo, SUGGEST_SAMPLE).max(axis=2)
+            scores[lo:hi] = np.median(best, axis=0)
+        scores[~self._alive] = -1.0
+        return scores
+
+    def background(self, probe, source):
+        """Cluster ids that are NOT the person `probe` shows, spread over the
+        crowd around it (see SUGGEST_BG_FROM): the sample a score is judged
+        against. Never `source` itself."""
+        with self._lock:
+            if not len(self._ids) or not len(probe):
+                return []
+            scores = self._stage1(probe)
+            scores[self._ids == int(source)] = -1.0
+            order = np.argsort(-scores)
+            picked = [int(self._ids[k]) for k in order[SUGGEST_BG_FROM:SUGGEST_BG_TO:SUGGEST_BG_STEP]
+                      if scores[k] >= 0]
+            return picked
+
     def shortlist(self, probe, ok, limit=SUGGEST_SHORTLIST):
         """Cluster ids best matching `probe` (unit rows) by the small-sample
         score, for which ok(cluster_id) holds, best first."""
@@ -890,15 +939,7 @@ class SuggestIndex:
             n = len(self._ids)
             if not n or not len(probe):
                 return []
-            probe = probe[:SUGGEST_PROBE].astype(np.float32)
-            scores = np.full(n, -1.0, dtype=np.float32)
-            for lo in range(0, n, _SUGGEST_CHUNK):
-                hi = min(n, lo + _SUGGEST_CHUNK)
-                block = self._samples[lo:hi].astype(np.float32)      # k, S, 512
-                sims = probe @ block.reshape(-1, 512).T              # m, k*S
-                best = sims.reshape(len(probe), hi - lo, SUGGEST_SAMPLE).max(axis=2)
-                scores[lo:hi] = np.median(best, axis=0)
-            scores[~self._alive] = -1.0
+            scores = self._stage1(probe)
             order = np.argsort(-scores)[:max(limit * 8, 200)]
             ids = self._ids
             out = []
@@ -913,15 +954,34 @@ class SuggestIndex:
             return out
 
 
+def background_stats(conn, index, xs, cluster_id):
+    """(mean, sd) of the exact link score of `xs` against the background crowd
+    (SuggestIndex.background), or None when too few clusters to sample. The sd
+    has a floor, SUGGEST_BG_SD_MIN."""
+    ids = index.background(xs, cluster_id)
+    if len(ids) < SUGGEST_BG_MIN:
+        return None
+    vals = np.array([link_score(xs, cluster_faces(conn, c, SUGGEST_FACES)[1]) for c in ids],
+                    dtype=np.float64)
+    return float(vals.mean()), max(float(vals.std()), SUGGEST_BG_SD_MIN)
+
+
+def significance(score, mean, sd):
+    """How many standard deviations a score stands above the background."""
+    return (score - mean) / sd
+
+
 def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
                         floor=SUGGEST_FLOOR, detail=False):
     """[(cluster id, link score)] best first: the clusters most likely to be the
     same person as `cluster_id`, from the resident index then scored exactly.
     `ok(cluster_id)` filters candidates (permissions, hidden, rejected pairs).
 
-    detail=True returns dicts {id, score, likely} instead, `likely` judged by
-    likely_line() of the scores found (see SUGGEST_LIKELY); without it the
-    plain tuples keep their meaning and only `floor` applies."""
+    detail=True returns dicts {id, score, z, bg, likely} instead: z is the score
+    in standard deviations above this person's own background (bg = its mean),
+    and `likely` means z >= SUGGEST_Z_LIKELY (see there); without a measurable
+    background z and bg are None and the absolute lines (likely_line) decide.
+    Without detail the plain tuples keep their meaning and only `floor` applies."""
     _ids, xs = cluster_faces(conn, cluster_id, SUGGEST_FACES)
     if not len(xs):
         return []
@@ -940,8 +1000,19 @@ def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
     scored = scored[:limit]
     if not detail:
         return scored
-    line = likely_line([s for _, s in scored])
-    return [{"id": cid, "score": s, "likely": s >= line} for cid, s in scored]
+    stats = background_stats(conn, index, xs, cluster_id) if scored else None
+    out = []
+    if stats is None:
+        line = likely_line([s for _, s in scored])
+        for cid, s in scored:
+            out.append({"id": cid, "score": s, "z": None, "bg": None, "likely": s >= line})
+        return out
+    mean, sd = stats
+    for cid, s in scored:
+        z = significance(s, mean, sd)
+        out.append({"id": cid, "score": s, "z": round(z, 1), "bg": round(mean, 3),
+                    "likely": z >= SUGGEST_Z_LIKELY})
+    return out
 
 
 def _cover_of(conn, cluster_id):

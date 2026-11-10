@@ -8917,13 +8917,17 @@ def media_person_similar(cluster_id):
         if item:
             item["similarity"] = hit["score"]
             item["likely"] = hit["likely"]
+            item["z"] = hit["z"]
             items.append(item)
-    # The line this anchor is judged by (it moves with how many matches are high,
-    # media_faces.likely_line); the page offers a bulk merge from it.
+    # What this person's scores are judged against: its own background level
+    # (media_faces.SUGGEST_Z_LIKELY); None where it could not be measured, and
+    # the absolute line then decides.
+    bg = next((h["bg"] for h in found if h["bg"] is not None), None)
     line = media_faces.likely_line([h["score"] for h in found])
     source = discovery_person_item(conn, cluster_id, auto, real, allowed, levels)
     return jsonify({"items": items, "loading": False, "source": source,
-                    "likely_at": line, "bulk_at": line,
+                    "likely_at": line, "bulk_at": line, "bg": bg,
+                    "z_likely": media_faces.SUGGEST_Z_LIKELY,
                     "bulk_min": media_faces.SUGGEST_BULK_MIN})
 
 
@@ -8964,6 +8968,8 @@ def media_person_decision(cluster_id):
         other = int(body.get("other"))
         score = float(body.get("score"))
         line = float(body["line"]) if body.get("line") is not None else None
+        z = float(body["z"]) if body.get("z") is not None else None
+        bg = float(body["bg"]) if body.get("bg") is not None else None
     except (TypeError, ValueError):
         return jsonify({"error": "send `other`, `score` (and `line`) as numbers"}), 400
     if other == cluster_id or not (0.0 <= score <= 1.0) or (line is not None and not (0.0 <= line <= 1.0)):
@@ -8971,7 +8977,7 @@ def media_person_decision(cluster_id):
     user = get_authenticated_user()
     row = {"at": round(time.time(), 1), "user": (user or {}).get("username") if isinstance(user, dict) else None,
            "anchor": cluster_id, "other": other, "decision": decision, "score": round(score, 4),
-           "likely": bool(body.get("likely")), "line": line,
+           "likely": bool(body.get("likely")), "line": line, "z": z, "bg": bg,
            "bulk": bool(body.get("bulk"))}
     path = os.path.join(media_ai.store_dir(BASE_DIR), "person_decisions.jsonl")
     try:

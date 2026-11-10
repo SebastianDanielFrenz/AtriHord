@@ -2953,7 +2953,7 @@ function openSimilar(person) {
 
   const st = { id: person.id, person: { ...person }, overlay, panel, anchorArt, title, sub,
                status, bulk, grid, close, merged: 0, seq: 0, retries: 0, timer: null,
-               items: new Map(), bulkMode: false, bulkAt: 0.75, bulkMin: 4, busy: false };
+               items: new Map(), bulkMode: false, bulkAt: 0.75, bulkMin: 4, bg: null, busy: false };
   similarOpen = st;
   paintSimilarHead(st);
   setSimilarStatus(st, 'Looking for matches…');
@@ -3009,6 +3009,7 @@ async function loadSimilar(st) {
   st.retries = 0;
   if (typeof data.bulk_at === 'number') st.bulkAt = data.bulk_at;
   if (typeof data.bulk_min === 'number') st.bulkMin = data.bulk_min;
+  st.bg = typeof data.bg === 'number' ? data.bg : null;
   if (data.source) {
     st.person = { ...st.person, ...data.source };
     paintSimilarHead(st);
@@ -3050,7 +3051,7 @@ function refreshSimilarStatus(st) {
    once: "Review them" marks exactly which tiles it would fold in, each with a
    tick to take out, and only "Merge" does anything. */
 function bulkCandidates(st) {
-  return liveSimilarCards(st).filter((c) => Number(c.dataset.sim) >= st.bulkAt);
+  return liveSimilarCards(st).filter((c) => c.classList.contains('is-likely'));
 }
 
 function bulkPicked(st) {
@@ -3059,7 +3060,6 @@ function bulkPicked(st) {
 
 function paintBulk(st) {
   st.bulk.textContent = '';
-  const pct = Math.round(st.bulkAt * 100);
   if (st.bulkMode) {
     const picked = bulkPicked(st);
     const text = document.createElement('span');
@@ -3082,7 +3082,7 @@ function paintBulk(st) {
   const cands = bulkCandidates(st);
   if (cands.length >= st.bulkMin) {
     const text = document.createElement('span');
-    text.textContent = `${cands.length} matches at ${pct}% or more — merge them all?`;
+    text.textContent = `${cands.length} clear matches — merge them all?`;
     const review = document.createElement('button');
     review.type = 'button';
     review.className = 'btn';
@@ -3153,7 +3153,7 @@ function logSimilarDecision(st, item, decision, bulk) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ other: item.id, decision, score: item.similarity,
-                           likely: !!item.likely, line: st.bulkAt, bulk: !!bulk }),
+                           likely: !!item.likely, line: st.bulkAt, z: item.z, bg: st.bg, bulk: !!bulk }),
   }).catch(() => {});
 }
 
@@ -3180,9 +3180,10 @@ function similarCard(st, item) {
   const score = document.createElement('div');
   score.className = 'similar-score';
   score.textContent = pct + '% match';
+  const usual = st.bg != null ? ` (this face usually scores ${Math.round(st.bg * 100)}% against other people)` : '';
   score.title = item.likely
-    ? 'Faces of the two tiles match as well as faces of one person usually do'
-    : 'Weaker than a usual match of one person — look before merging';
+    ? 'Far above how this face compares to other people' + usual
+    : 'Not far enough above how this face compares to other people' + usual + ' — look before merging';
 
   const name = document.createElement('div');
   name.className = 'person-name' + (item.name ? '' : (item.auto_name ? ' is-auto' : ' is-unnamed'));
