@@ -1,0 +1,484 @@
+{
+   "bindings": {
+      "/actions/left_action_set": {
+         "chords": [],
+         "eyetracking": [],
+         "haptics": [],
+         "poses": [
+            {
+               "output": "/actions/left_action_set/in/left_controller_grip_pose",
+               "path": "/user/hand/left/pose/openxr_grip"
+            },
+            {
+               "output": "/actions/left_action_set/in/left_controller_aim_pose",
+               "path": "/user/hand/left/pose/openxr_aim"
+            }
+         ],
+         "sources": [
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_trigger_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/trigger"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_trigger_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/bumper"
+            },
+            {
+               "inputs": {
+                  "value": {
+                     "output": "/actions/left_action_set/in/left_controller_trigger_button_value"
+                  }
+               },
+               "mode": "scalar_constant",
+               "parameters": null,
+               "path": "/user/hand/left/input/bumper"
+            },
+            {
+               "inputs": {
+                  "pull": {
+                     "output": "/actions/left_action_set/in/left_controller_trigger_button_value"
+                  }
+               },
+               "mode": "trigger",
+               "path": "/user/hand/left/input/trigger"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/left_action_set/in/left_controller_trigger_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/trigger"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/left_action_set/in/left_controller_trigger_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/bumper"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_squeeze_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/grip"
+            },
+            {
+               "inputs": {
+                  "pull": {
+                     "output": "/actions/left_action_set/in/left_controller_squeeze_button_value"
+                  }
+               },
+               "mode": "trigger",
+               "path": "/user/hand/left/input/grip"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_thumbstick_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "force_input": "click",
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/thumbstick"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/left_action_set/in/left_controller_thumbstick_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/thumbstick"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_upper_button_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "force_input": "click",
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/dpad_down"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_menu_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "force_input": "click",
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/view"
+            },
+            {
+               "inputs": {
+                  "position": {
+                     "output": "/actions/left_action_set/in/left_controller_thumbstick_axis"
+                  }
+               },
+               "mode": "joystick",
+               "path": "/user/hand/left/input/thumbstick"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_lower_button_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/dpad_up"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_upper_button_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/dpad_left"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_thumbrest_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/dpad_left"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_lower_button_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/dpad_right"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/left_action_set/in/left_controller_thumbrest_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/left/input/dpad_right"
+            }
+         ]
+      },
+      "/actions/right_action_set": {
+         "chords": [],
+         "eyetracking": [],
+         "haptics": [],
+         "poses": [
+            {
+               "output": "/actions/right_action_set/in/right_controller_grip_pose",
+               "path": "/user/hand/right/pose/openxr_grip"
+            },
+            {
+               "output": "/actions/right_action_set/in/right_controller_aim_pose",
+               "path": "/user/hand/right/pose/openxr_aim"
+            }
+         ],
+         "sources": [
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_trigger_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/trigger"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_trigger_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/bumper"
+            },
+            {
+               "inputs": {
+                  "value": {
+                     "output": "/actions/right_action_set/in/right_controller_trigger_button_value"
+                  }
+               },
+               "mode": "scalar_constant",
+               "parameters": null,
+               "path": "/user/hand/right/input/bumper"
+            },
+            {
+               "inputs": {
+                  "pull": {
+                     "output": "/actions/right_action_set/in/right_controller_trigger_button_value"
+                  }
+               },
+               "mode": "trigger",
+               "path": "/user/hand/right/input/trigger"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/right_action_set/in/right_controller_trigger_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/trigger"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/right_action_set/in/right_controller_trigger_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/bumper"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_squeeze_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/grip"
+            },
+            {
+               "inputs": {
+                  "pull": {
+                     "output": "/actions/right_action_set/in/right_controller_squeeze_button_value"
+                  }
+               },
+               "mode": "trigger",
+               "path": "/user/hand/right/input/grip"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_thumbstick_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "force_input": "click",
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/thumbstick"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/right_action_set/in/right_controller_thumbstick_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/thumbstick"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/right_action_set/in/right_controller_thumbrest_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/thumbrest"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_upper_button_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "force_input": "click",
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/a"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/right_action_set/in/right_controller_upper_button_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/a"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_lower_button_button_press"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "force_input": "click",
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/b"
+            },
+            {
+               "inputs": {
+                  "touch": {
+                     "output": "/actions/right_action_set/in/right_controller_lower_button_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/b"
+            },
+            {
+               "inputs": {
+                  "position": {
+                     "output": "/actions/right_action_set/in/right_controller_thumbstick_axis"
+                  }
+               },
+               "mode": "joystick",
+               "path": "/user/hand/right/input/thumbstick"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_upper_button_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/x"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_thumbrest_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/x"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_lower_button_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/y"
+            },
+            {
+               "inputs": {
+                  "click": {
+                     "output": "/actions/right_action_set/in/right_controller_thumbrest_button_touch"
+                  }
+               },
+               "mode": "button",
+               "parameters": {
+                  "haptic_amplitude": 0
+               },
+               "path": "/user/hand/right/input/y"
+            }
+         ]
+      }
+   },
+   "category": "openxr",
+   "controller_type": "frame_controller",
+   "description": "media-dl VR: left d-pad up Forward, down Back (hold Exit), left previous, right next; right X held tilts the UI, right Y toggles the favourite",
+   "interaction_profile": "/interaction_profiles/oculus/touch_controller",
+   "name": "media-dl d-pad",
+   "app_key": "system.generated.openxr.google chrome 156.chrome.exe"
+}
