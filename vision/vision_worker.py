@@ -77,7 +77,11 @@ UPLOAD_MAX_BYTES = 64 * 1024 ** 3
 UPLOAD_SPOOL_DIR = os.path.join(BASE_DIR, "upload-spool")
 
 FLORENCE = "microsoft/Florence-2-large"
-TAGGER = "SmilingWolf/wd-eva02-large-tagger-v3"
+# The tagger is CONFIG, not code: config()["tagger"] names it. Switching to a
+# new one is a model directory plus a config edit - the runbook is
+# vision/tagger/TAGGER_UPGRADE.md. Its "id" is what /v1/status reports and what
+# the indexer stamps on every file, so changing the id re-tags the library
+# (newest first) and leaving it alone does not.
 # buffalo_l, not dlib/face_recognition: this library is cosplayers and mostly
 # East Asian faces, and dlib's model is measurably worse on non-white faces.
 # ArcFace R100 trained on glint360k handles both far better.
@@ -95,10 +99,32 @@ MIN_FACE_PX = 48
 # measured on images with no text at all, which came back as "X", "0", "B".
 MIN_OCR_CHARS = 3
 
-# 0.35 rather than the usual 0.5: measured on real library images it finds a
-# character on 63% of pixiv and 59% of twitter pictures that contain a person,
-# against 47%/41% at 0.5, and 0.25 adds almost nothing over it.
-TAG_THRESHOLDS = {"character": 0.35, "general": 0.35, "rating": 0.5}
+# The default tagger: the WD EVA02 2026 canary (2026-11-10, vault KSF-078):
+# SmilingWolf's v3 retrained on Danbooru up to 2026-05-18, +2,205 characters
+# (Zenless Zone Zero, Wuthering Waves, new Genshin/HSR). Published as timm
+# safetensors only; vision/tagger/export_timm_tagger.py turns it into an ONNX
+# file with v3's interface (NHWC BGR 0-255 in, sigmoid out), so tagger_prep
+# serves both.
+# Thresholds 0.5: the canary's scores are recentred per label (P=R at 0.61),
+# so its 0.5 matches v3's 0.35 - 38.8 general tags per picture against v3's
+# 38.2, the best overlap with v3 - while its characters between 0.35 and 0.5
+# were mostly wrong guesses. v3 itself ran at 0.35/0.35/0.5.
+DEFAULT_TAGGER = {
+    "id": "wd-eva02-2026-canary",
+    "source": "ashen-sensored/wd-eva02-tagger-2026-canary",
+    "dir": os.path.join(BASE_DIR, "models", "wd-eva02-2026-canary"),
+    "thresholds": {"character": 0.5, "general": 0.5, "rating": 0.5},
+}
+
+
+def tagger_config() -> dict:
+    """The configured tagger, every key filled in. A partial "tagger" block in
+    vision_config.json overrides only what it names."""
+    t = dict(DEFAULT_TAGGER)
+    t.update(config().get("tagger") or {})
+    t["thresholds"] = {**DEFAULT_TAGGER["thresholds"], **(t.get("thresholds") or {})}
+    t["dir"] = os.path.join(BASE_DIR, t["dir"]) if not os.path.isabs(t["dir"]) else t["dir"]
+    return t
 
 app = Flask(__name__)
 _lock = threading.Lock()          # one batch on the GPU at a time
@@ -282,12 +308,12 @@ def load_florence():
 def load_tagger():
     cfg = config()
     import onnxruntime as ort
-    from huggingface_hub import hf_hub_download
+    tagger = tagger_config()
     # kSameAsRequested rather than the default kNextPowerOfTwo: the default
     # doubles the arena on every growth and overshoots badly for a workload
     # whose batch shape never changes.
     sess = ort.InferenceSession(
-        hf_hub_download(TAGGER, "model.onnx"),
+        os.path.join(tagger["dir"], "model.onnx"),
         providers=[("CUDAExecutionProvider", {
             "gpu_mem_limit": cfg["tagger_vram_mb"] * 1024 * 1024,
             "arena_extend_strategy": "kSameAsRequested",
@@ -298,7 +324,7 @@ def load_tagger():
         print("[vision] WARNING: tagger fell back to CPU; check LD_LIBRARY_PATH "
               "points at torch's bundled nvidia libs", flush=True)
     names, cats = [], []
-    with open(hf_hub_download(TAGGER, "selected_tags.csv"),
+    with open(os.path.join(tagger["dir"], "selected_tags.csv"),
               newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             names.append(row["name"])
@@ -307,8 +333,11 @@ def load_tagger():
     MODELS["tag_names"] = np.array(names)
     MODELS["tag_cats"] = np.array(cats)
     MODELS["tag_input"] = sess.get_inputs()[0]
-    print("[vision] tagger loaded; %d MiB arena limit" % cfg["tagger_vram_mb"],
-          flush=True)
+    # Held with the session, so a config edit cannot mix one model's scores
+    # with another's thresholds before the next reload.
+    MODELS["tag_config"] = tagger
+    print("[vision] tagger %s loaded; %d MiB arena limit"
+          % (tagger["id"], cfg["tagger_vram_mb"]), flush=True)
 
 
 def load_faces():
@@ -496,9 +525,10 @@ def tag(images):
             idx = np.where((cats == cat) & (p > thr))[0]
             idx = idx[np.argsort(-p[idx])]
             return [{"tag": str(names[i]), "p": round(float(p[i]), 3)} for i in idx]
-        out.append({"character": pick(4, TAG_THRESHOLDS["character"]),
-                    "general": pick(0, TAG_THRESHOLDS["general"]),
-                    "rating": pick(9, TAG_THRESHOLDS["rating"])})
+        thr = MODELS["tag_config"]["thresholds"]
+        out.append({"character": pick(4, thr["character"]),
+                    "general": pick(0, thr["general"]),
+                    "rating": pick(9, thr["rating"])})
     return out
 
 
@@ -619,7 +649,9 @@ def status():
             "in_window": in_window(), "windows": next_window_text(),
             "idle_unload_s": cfg.get("idle_unload_s"),
             "idle_for_s": round(time.time() - STATE["last_request"]),
-            "unloaded_at": STATE["unloaded_at"]}
+            "unloaded_at": STATE["unloaded_at"],
+            # What the indexer stamps tagged files with; see tagger_config.
+            "tagger": {k: tagger_config()[k] for k in ("id", "source", "thresholds")}}
     if STATE["images"]:
         body["seconds_per_image"] = round(STATE["seconds"] / STATE["images"], 4)
     if "torch" in MODELS:
@@ -914,7 +946,7 @@ def analyze():
 
     return jsonify({"results": results, "failed": failed,
                     "models": {"caption": FLORENCE, "ocr": FLORENCE,
-                               "tags": TAGGER, "faces": FACE_MODEL, "orient": FACE_MODEL}})
+                               "tags": MODELS.get("tag_config", tagger_config())["id"], "faces": FACE_MODEL, "orient": FACE_MODEL}})
 
 
 @app.route("/v1/audio", methods=["POST"])

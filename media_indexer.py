@@ -449,13 +449,28 @@ def tags_text(tags):
 TASK_MODELS = {
     "caption": ("caption_model", "florence2-large"),
     "ocr": ("ocr_model", "florence2-large"),
-    "tags": ("tag_model", "wd-eva02-large-v3"),
+    # The tag stamp is the WORKER's tagger id (its /v1/status, see
+    # worker_tagger_id), so a tagger switch is a worker config edit and the
+    # library re-tags itself, newest first. This value is only the fallback
+    # for a worker too old to report one. Runbook:
+    # vision/tagger/TAGGER_UPGRADE.md.
+    "tags": ("tag_model", "wd-eva02-2026-canary"),
     "faces": ("face_model", "insightface-buffalo_l"),
     "genre": ("genre_model", "discogs-effnet-bsdynamic-1"),
     # Bump the suffix when orient_decide's rules change: every video is
     # looked at again (a few hours of frame grabs, minutes of GPU).
     "orient": ("orient_model", "insightface-det10g-turns-1"),
 }
+
+
+def worker_tagger_id(cfg):
+    """The id of the tagger the worker is configured with, or None when it
+    does not say (an older worker) - then TASK_MODELS' value stands."""
+    req = urllib.request.Request(cfg["worker"].rstrip("/") + "/v1/status")
+    if cfg.get("token"):
+        req.add_header("Authorization", "Bearer " + cfg["token"])
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return ((json.load(r) or {}).get("tagger") or {}).get("id") or None
 
 
 def models_for(tasks):
@@ -585,6 +600,10 @@ def maybe_regroup_variants(conn):
 def sweep(cfg, base_dir, roots, limit=None, urgent=False, verbose=True, budget_s=None):
     conn = media_ai.connect(base_dir)
     models = models_for(cfg["tasks"])
+    if "tag_model" in models:
+        # Asked once per sweep: a worker that cannot be asked cannot tag
+        # either, so a failure here fails the sweep like a failed batch.
+        models["tag_model"] = worker_tagger_id(cfg) or models["tag_model"]
     max_bytes = cfg["max_image_mb"] * 1024 * 1024
 
     t0 = time.time()
@@ -698,6 +717,14 @@ def flush(conn, cfg, batch, models, urgent, verbose, turns=None):
         return 0, len(unsent)
 
     reply = post_batch(cfg, payloads, urgent=urgent)
+    # The worker's tagger was switched while this sweep ran: storing these
+    # tags under the stamp the sweep started with would mark them as the old
+    # model's (and skip them in the re-tag), so stop and let the next sweep
+    # re-read the id.
+    sent_tags = (reply.get("models") or {}).get("tags")
+    if "tag_model" in models and sent_tags and sent_tags != models["tag_model"]:
+        raise RuntimeError(f"the worker tags with {sent_tags}, this sweep "
+                           f"expected {models['tag_model']}")
     by_label = {r["name"]: r for r in reply.get("results", [])}
     for f in reply.get("failed", []):
         by_label[f["name"]] = {"failed": True}
