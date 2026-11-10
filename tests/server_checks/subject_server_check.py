@@ -76,7 +76,7 @@ GUEST = {"username": "guest", "role": "guest"}
 CURRENT = {"user": ADMIN}
 ns["get_authenticated_user"] = lambda: CURRENT["user"]
 # BASE_DIR first: helpers that catch their own exceptions hide a NameError.
-for name in ("BASE_DIR", "CONFIG", "DEFAULT_CONFIG", "app", "SEARCH_MODES", "AI_SEARCH_COLUMNS", "narrow_to_words",
+for name in ("BASE_DIR", "CONFIG", "DEFAULT_CONFIG", "app", "SEARCH_MODES", "AI_SEARCH_COLUMNS", "TEXT_SCAN_BELOW", "narrow_to_words",
              "search_media", "create_query_share", "query_share_files", "share_detail", "share_summary",
              "_read_shares_unlocked", "shares_lock",
              # _compute_query_share swallows its own errors, so a person link's

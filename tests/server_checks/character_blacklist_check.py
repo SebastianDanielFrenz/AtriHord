@@ -397,7 +397,9 @@ try:
 
     ns["_charbl_state"].update(pending=False, running=False)
     grid, out = pools("/api/media/characters?limit=300")
-    check("no sweep waiting: the pools are listed as they are", "hide_me" in grid and "keep_me" in grid, list(grid))
+    # The list applies whether or not a sweep is waiting: shared pictures are kept, so a
+    # listed character's pool would otherwise come back once the sweep has run.
+    check("no sweep waiting: the listed pool stays out, the others are listed", "hide_me" not in grid and "keep_me" in grid, list(grid))
     total_before = out["total"]
     ns["_charbl_state"]["pending"] = True
     grid, out = pools("/api/media/characters?limit=300")
@@ -405,7 +407,7 @@ try:
           and not any(t.startswith("hide_me") for t in grid), list(grid))
     check("... a variant-only entry removes just that variant from its pool",
           "keep_me" in grid and variant_tags(grid["keep_me"]) == [] , grid.get("keep_me"))
-    check("... the total follows", out["total"] == total_before - 1, (out["total"], total_before))
+    check("... the total follows", out["total"] == total_before == len(grid), (out["total"], total_before, len(grid)))
     grid, _ = pools("/api/media/characters?limit=8&q=hide")
     check("... the type-ahead agrees", "hide_me" not in grid, list(grid))
     grid, _ = pools("/api/media/characters?limit=8&q=keep")
@@ -421,7 +423,7 @@ try:
     check("sweep running: hidden as well", "hide_me" not in grid)
     ns["_charbl_state"].update(pending=False, running=False)
     grid, _ = pools("/api/media/characters?limit=300")
-    check("sweep done: nothing is hidden by the list any more (files are gone by then, or live)", "hide_me" in grid)
+    check("sweep done: the list still hides her (her shared pictures stay in the index)", "hide_me" not in grid and "keep_me" in grid)
 
     # ---- the store ----------------------------------------------------------------
     data = json.load(open(os.path.join(tmp, "character_blacklist.json")))

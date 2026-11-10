@@ -18,14 +18,26 @@ STAGE=$(realpath "$1")
 APP=${ATRIHORD_DIR:?set ATRIHORD_DIR to the app folder}
 HERE=$(cd "$(dirname "$0")" && pwd)
 for m in media_ai.py media_faces.py media_indexer.py genre_map.py youtube_music_extractor.py recent_media_store.py music_library.py music_listened.py \
-         music_loudness.py song_covers.py post_stitch.py song_merge.py image_dedup.py; do
+         music_loudness.py song_covers.py post_stitch.py song_merge.py image_dedup.py video_trim.py; do
     [ -f "$STAGE/$m" ] || cp -p "$APP/$m" "$STAGE/$m"
 done
+# Harnesses of modules that are in the repo but not deployed (yet): they test the module
+# itself, so with no copy in the stage or the app folder there is nothing to run.
+# Deploy the module and it is checked from then on.
+UNDEPLOYED="vr_share_check.py:vr_share.py phone_ingest_check.py:phone_ingest.py"
 fail=0
 for check in "$HERE"/*_check.py; do
     name=$(basename "$check")
     [ "$name" = live_check.py ] && continue
     [ "$name" = vision_lock_check.py ] && continue
+    skip=0
+    for pair in $UNDEPLOYED; do
+        if [ "${pair%%:*}" = "$name" ] && [ ! -f "$STAGE/${pair##*:}" ] && [ ! -f "$APP/${pair##*:}" ]; then
+            printf '%-28s skipped: %s is not deployed
+' "$name" "${pair##*:}"; skip=1
+        fi
+    done
+    [ "$skip" = 1 ] && continue
     # writeguard.py refuses every write into $APP and turns it into a FAIL line:
     # a harness once rewrote the live config.json through a resolved CONFIG.
     out=$(cd "$APP" && LIVE_DIR="$APP" timeout 600 "$APP/venv/bin/python" "$HERE/writeguard.py" "$check" "$STAGE/server.py" 2>&1)
