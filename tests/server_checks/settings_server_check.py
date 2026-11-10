@@ -96,7 +96,7 @@ status, data = call("get_settings", "/api/settings")
 ids = [s["id"] for s in data["schema"]]
 #        vr_share is in the repo's server.py only until it is deployed; stereo3d (2D to 3D) is last
 check("GET schema sections", status == 200 and [i for i in ids if i != "vr_share"] ==
-      ["general", "shares", "downloads", "image_processing", "song_covers", "live_upscale", "stereo3d"], ids)
+      ["general", "shares", "downloads", "image_processing", "video_trim", "song_covers", "live_upscale", "stereo3d"], ids)
 #        "song_covers" is the temporary cover-repair job: it goes out of this list with it
 missing = [k for k, v in data["values"].items() if v is None]
 check("every setting has a value", not missing, missing)

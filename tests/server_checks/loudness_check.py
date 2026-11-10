@@ -86,7 +86,8 @@ masters[("r", "quiet.opus")] = [-20.0, -14.0]
 p2 = mlo.plan(masters)
 check("... but turned down with the rest when most files are turned down (loud masters)",
       p2["target"] == -6.0 and p2["unknown"] == -2.0, p2)
-check("nothing measured: no target, no gains", mlo.plan({}) == {"target": None, "gains": {}, "unknown": 0.0}
+# "levels" (each file's own loudness and ceiling, for the page) came with the plan after this check was written
+check("nothing measured: no target, no gains, no levels", mlo.plan({}) == {"target": None, "gains": {}, "levels": {}, "unknown": 0.0}
       and mlo.choose_target([[None, None]]) is None)
 check("the rule is the one the module states", mlo.PEAK_CEILING_DBTP == 0.0 and mlo.REACH == 0.95)
 

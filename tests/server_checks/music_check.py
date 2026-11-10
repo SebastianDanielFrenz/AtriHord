@@ -245,7 +245,9 @@ check("... and a viewer with no listening yet gets the defaults (autoplay on)",
       view["me"] == {"events": [], "radios": [], "autoplay": True}, view["me"])
 
 ls = ml.Listening(os.path.join(tmp, "listening.json"))
-check("a new account: nothing played, autoplay on", ls.summary("alice") == {"events": [], "radios": [], "autoplay": True})
+# target_lufs: the account's own loudness target (None until it sets one), added to the summary with the loudness feature
+check("a new account: nothing played, autoplay on, no loudness target of its own",
+      ls.summary("alice") == {"events": [], "radios": [], "autoplay": True, "target_lufs": None})
 ls.record("alice", "v:vid00000001", "user", now=100)
 ls.record("alice", "v:vid00000002", "list", now=101)
 RADIO = {"id": "song:v:vid00000001", "kind": "song", "key": "v:vid00000001", "title": "Astronomia radio"}
@@ -307,7 +309,7 @@ ls.set_autoplay("alice", False)
 again = ml.Listening(os.path.join(tmp, "listening.json"))
 check("the autoplay switch and everything else read back from disk", again.summary("alice") == ls.summary("alice")
       and again.summary("alice")["autoplay"] is False)
-check("another account has none of it", ls.summary("bob") == {"events": [], "radios": [], "autoplay": True}
+check("another account has none of it", ls.summary("bob") == {"events": [], "radios": [], "autoplay": True, "target_lufs": None}
       and ls.radio("bob", RADIO["id"]) is None)
 
 # ---- the server ----------------------------------------------------------------------------

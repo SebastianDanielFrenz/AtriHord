@@ -20,7 +20,9 @@ import tempfile
 import threading
 import time
 
+# run_all.sh passes the staged server.py; the modules sit next to it
 STAGE = os.path.abspath(sys.argv[1])
+STAGE = os.path.dirname(STAGE) if os.path.isfile(STAGE) else STAGE
 sys.path.insert(0, STAGE)
 import video_trim                       # noqa: E402
 
@@ -107,7 +109,8 @@ def gen(path, k, kind="mp4", intro=True, outro=True, sparse=False, crf=None, con
 
 
 def new_service(**overrides):
-    cfg = dict(video_trim.DEFAULTS, **overrides)
+    # the module only scans folders named in its "folders" setting (default downloads:youtube); the temp library is root "lib"
+    cfg = dict(video_trim.DEFAULTS, folders=["lib:"], **overrides)
     state = tempfile.mkdtemp(dir=tmp, prefix="state_")
     svc = video_trim.VideoTrim(state, lambda: cfg, lambda: False, lambda: [{"id": "lib", "path": LIB}],
                                lambda: invalidations.append(1), log=lambda t: print("  " + t, flush=True))
@@ -327,7 +330,7 @@ off = new_service(after_download=False)
 check("after_download off queues nothing", off.enqueue_paths([{"root": "lib", "path": "chanA/new.mp4"}]) == 0)
 check("disabled queues nothing", new_service(enabled=False).enqueue_paths([{"root": "lib", "path": "chanA/n.mp4"}]) == 0)
 os.makedirs(os.path.join(tmp, "busy_state"))
-busy = video_trim.VideoTrim(os.path.join(tmp, "busy_state"), lambda: video_trim.DEFAULTS, lambda: True,
+busy = video_trim.VideoTrim(os.path.join(tmp, "busy_state"), lambda: dict(video_trim.DEFAULTS, folders=["lib:"]), lambda: True,
                             lambda: [{"id": "lib", "path": LIB}], lambda: None, log=lambda t: None)
 check("a scan stands back while downloads run", busy.scan_folder("lib", "chanC") == {"deferred": True})
 

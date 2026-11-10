@@ -7,7 +7,9 @@ import random
 import sys
 import tempfile
 
+# run_all.sh passes the staged server.py; the modules sit next to it
 D = os.path.abspath(sys.argv[1])
+D = os.path.dirname(D) if os.path.isfile(D) else D
 sys.path.insert(0, D)
 ok = True
 
