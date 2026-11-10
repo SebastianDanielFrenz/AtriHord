@@ -41,7 +41,7 @@ def check(label, cond, detail=""):
 
 
 rng = np.random.default_rng(7)
-NOISE = 0.029          # per dimension: two faces of one person land near cosine 0.7
+NOISE = 0.025          # per dimension: two faces of one person land near cosine 0.75-0.78 (a celebrity, 0.77-0.80 in the library)
 
 
 def unit(v):
@@ -105,6 +105,16 @@ check("a 4-face cluster is judged one way (its best matches in the big one), not
 check("... and the reverse direction alone would score it lower, which is why",
       media_faces._median_best_match(a1, a3) < s13, (media_faces._median_best_match(a1, a3), s13))
 check("an empty side scores 0", media_faces.link_score(a1, a1[:0]) == 0.0)
+# The green line is set from what the owner saw (2026-11-10): every correct
+# suggestion for a famous western face scored 0.77-0.80, every wrong cosplay one
+# 0.62-0.71. It must sit between the two, and must not be the auto-link line.
+check("the 'likely' line separates the observed correct (>= 0.77) from the observed wrong (<= 0.71) matches",
+      0.71 < media_faces.SUGGEST_LIKELY <= 0.77, media_faces.SUGGEST_LIKELY)
+check("... and is no longer the 0.63 auto-link threshold that marked every cosplay match green",
+      media_faces.SUGGEST_LIKELY > media_faces.FACE_LINK_THRESHOLD)
+check("the bulk offer starts at the likely line and needs several matches",
+      media_faces.SUGGEST_BULK_AT >= media_faces.SUGGEST_LIKELY and media_faces.SUGGEST_BULK_MIN >= 3,
+      (media_faces.SUGGEST_BULK_AT, media_faces.SUGGEST_BULK_MIN))
 
 # ------------------------------------------------------------------- search --
 index = media_faces.SuggestIndex()
@@ -296,7 +306,7 @@ if have_flask:
     ns["discovery_service"] = lambda: svc
     F("app")
     app = ns["app"]
-    for name in ("media_person_similar", "media_person_not_same", "media_person_update"):
+    for name in ("media_person_similar", "media_person_not_same", "media_person_update", "media_person_decision"):
         F(name)
 
     def get(path, fn="media_person_similar", **kw):
@@ -323,6 +333,9 @@ if have_flask:
     check("it offers person A's other half, with a score and the 'likely' flag, and the source",
           [i["id"] for i in body["items"]] == [3] and body["items"][0]["similarity"] >= media_faces.SUGGEST_LIKELY
           and body["items"][0]["likely"] is True and body["source"]["id"] == 1, body)
+    check("the response carries the bulk-offer constants for the page",
+          body["bulk_at"] == media_faces.SUGGEST_BULK_AT and body["bulk_min"] == media_faces.SUGGEST_BULK_MIN
+          and body["likely_at"] == media_faces.SUGGEST_LIKELY, body)
     check("... as full People tiles (count, cover face)",
           body["items"][0]["count"] >= 1 and body["items"][0]["face_id"] == face_ids[3][0], body["items"][0])
     rv, code = get("/api/media/people/777/similar", cid=777)
@@ -361,6 +374,33 @@ if have_flask:
     check("only an admin can record it", code == 403, code)
     rv, code = get("/api/media/people/1/similar", cid=1)
     check("any signed-in user can read the suggestions", code == 200, code)
+    USER["role"] = "admin"
+
+    # The decision log: a JSONL file beside the index, never a table.
+    log = os.path.join(media_ai.store_dir(tmp), "person_decisions.jsonl")
+    check("no decision log before a decision", not os.path.exists(log))
+    good = {"other": 3, "decision": "merge", "score": 0.7812, "likely": True, "cosplay": False, "bulk": True}
+    rv, code = post("/api/media/people/1/decision", good, "media_person_decision", 1)
+    check("a decision is logged", code == 200 and rv.get_json() == {"ok": True}, (code, rv.get_json()))
+    rv, code = post("/api/media/people/1/decision", {**good, "decision": "not_same", "score": 0.66, "likely": False,
+                                                    "cosplay": True, "bulk": False}, "media_person_decision", 1)
+    import json as _json
+    rows = [_json.loads(x) for x in open(log, encoding="utf-8").read().splitlines()]
+    check("... one JSON line each, with the pair, the score and the flags it was judged with",
+          len(rows) == 2 and rows[0]["anchor"] == 1 and rows[0]["other"] == 3 and rows[0]["decision"] == "merge"
+          and rows[0]["score"] == 0.7812 and rows[0]["likely"] is True and rows[0]["bulk"] is True
+          and rows[0]["user"] == "alice" and rows[1]["decision"] == "not_same" and rows[1]["cosplay"] is True
+          and rows[1]["bulk"] is False and isinstance(rows[0]["at"], float), rows)
+    for bad in ({**good, "decision": "delete"}, {**good, "score": 1.5}, {**good, "score": "x"},
+                {**good, "other": 1}, {"decision": "merge", "score": 0.7}):
+        rv, code = post("/api/media/people/1/decision", bad, "media_person_decision", 1)
+        check("a malformed decision is a 400 and writes nothing: %s" % (bad,), code == 400, code)
+    check("... the log still has its two lines", len(open(log, encoding="utf-8").read().splitlines()) == 2)
+    check("the log is not in the media index database (no schema change)",
+          conn.execute("SELECT 1 FROM sqlite_master WHERE name LIKE '%decision%'").fetchone() is None)
+    USER["role"] = "guest"
+    rv, code = post("/api/media/people/1/decision", good, "media_person_decision", 1)
+    check("only an admin can log a decision", code == 403, code)
     USER["role"] = "admin"
     conn.execute("DELETE FROM person_nomatch")
     conn.commit()

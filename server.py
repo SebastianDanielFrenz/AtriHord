@@ -8922,7 +8922,9 @@ def media_person_similar(cluster_id):
             items.append(item)
     source = discovery_person_item(conn, cluster_id, auto, real, allowed, levels)
     return jsonify({"items": items, "loading": False, "source": source,
-                    "likely_at": media_faces.SUGGEST_LIKELY})
+                    "likely_at": media_faces.SUGGEST_LIKELY,
+                    "bulk_at": media_faces.SUGGEST_BULK_AT,
+                    "bulk_min": media_faces.SUGGEST_BULK_MIN})
 
 
 @app.route("/api/media/people/<int:cluster_id>/not_same", methods=["POST"])
@@ -8940,6 +8942,42 @@ def media_person_not_same(cluster_id):
     conn = media_ai.connect(BASE_DIR)
     if not media_faces.record_not_same(conn, cluster_id, other):
         return jsonify({"error": "no such person"}), 404
+    return jsonify({"ok": True})
+
+
+_decision_lock = threading.Lock()
+
+
+@app.route("/api/media/people/<int:cluster_id>/decision", methods=["POST"])
+@require_admin
+def media_person_decision(cluster_id):
+    """One judgement on a suggestion, appended to person_decisions.jsonl next to
+    the media index. Only a log: the thresholds in media_faces are set by hand
+    from it (a file, not a table, so the shared index schema is untouched). The
+    page sends it after a merge or a "not them"; a failure here never matters to
+    the person using the panel."""
+    body = request.get_json(silent=True) or {}
+    decision = body.get("decision")
+    if decision not in ("merge", "not_same"):
+        return jsonify({"error": "decision must be merge or not_same"}), 400
+    try:
+        other = int(body.get("other"))
+        score = float(body.get("score"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "send `other` and `score` as numbers"}), 400
+    if other == cluster_id or not (0.0 <= score <= 1.0):
+        return jsonify({"error": "bad pair or score"}), 400
+    user = get_authenticated_user()
+    row = {"at": round(time.time(), 1), "user": (user or {}).get("username") if isinstance(user, dict) else None,
+           "anchor": cluster_id, "other": other, "decision": decision, "score": round(score, 4),
+           "likely": bool(body.get("likely")), "cosplay": bool(body.get("cosplay")),
+           "bulk": bool(body.get("bulk"))}
+    path = os.path.join(media_ai.store_dir(BASE_DIR), "person_decisions.jsonl")
+    try:
+        with _decision_lock, open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError as exc:
+        return jsonify({"error": "could not write the log: %s" % exc}), 500
     return jsonify({"ok": True})
 
 

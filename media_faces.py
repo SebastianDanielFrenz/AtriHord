@@ -704,7 +704,22 @@ SUGGEST_PROBE = 8             # source faces used for the stage-1 match
 SUGGEST_SHORTLIST = 40        # clusters scored exactly
 SUGGEST_FACES = 60            # faces per side in the exact score
 SUGGEST_FLOOR = 0.50          # below this a pair is not offered
-SUGGEST_LIKELY = FACE_LINK_THRESHOLD   # at or above: "likely the same"
+# "Likely the same" (green) is NOT the auto-link threshold. Measured on the
+# owner's library 2026-11-10: every correct suggestion for a famous western
+# face (Emma Watson, Dua Lipa, Zendaya) scored 0.77-0.80, every wrong one for
+# cosplayers (different people, wigs, costumes) 0.62-0.71. FACE_LINK_THRESHOLD
+# (0.63) is a floor for joining faces into one cluster automatically; as a
+# green "go ahead" it marked all of those wrong cosplay matches. The middle of
+# the gap is 0.74; 0.75 keeps every observed correct match and no observed wrong
+# one. Starting value: person_decisions.jsonl (server) records each judgement
+# with its score so it can be re-derived.
+SUGGEST_LIKELY = 0.75
+# The bulk offer ("N matches at 75 % or more - merge them all?"): at least
+# SUGGEST_BULK_MIN non-cosplay suggestions at or above SUGGEST_BULK_AT. Four,
+# because a person split into many pieces (Dua Lipa, Emma Watson: dozens) is
+# what it is for; one or two high matches are better handled one by one.
+SUGGEST_BULK_AT = SUGGEST_LIKELY
+SUGGEST_BULK_MIN = 4
 SUGGEST_INDEX_TTL = 900.0     # seconds before the index is rebuilt behind a request
 # Cosplayers (2026-11-10, owner): make-up, wigs and the same costume make two
 # different people score about 70 % against each other, where the same celebrity
@@ -715,6 +730,11 @@ SUGGEST_INDEX_TTL = 900.0     # seconds before the index is rebuilt behind a req
 # SUGGEST_COSPLAY_LIKELY. Anything in between is still shown, without the
 # likely mark, and asks before it merges. Starting values, not measured: tune
 # them from the owner's judgements on real pairs.
+# LIMIT OF THE TAG (measured on the live index): the share does not separate
+# the cases. @chi_muu2438 (cosplayer) 0.46, @wellchannel0214 (cosplayer) 0.08,
+# Dua Lipa 0.30, Emma Watson 0.24 - the tagger does not reliably call wig and
+# costume photos `cosplay`. The plain SUGGEST_LIKELY line is what protects the
+# untagged ones; this only tightens clusters the tagger did recognise.
 SUGGEST_COSPLAY_SHARE = 0.5
 SUGGEST_COSPLAY_FLOOR = 0.70
 SUGGEST_COSPLAY_LIKELY = 0.78

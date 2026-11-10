@@ -2935,14 +2935,19 @@ function openSimilar(person) {
   const status = document.createElement('div');
   status.className = 'similar-status';
   status.setAttribute('role', 'status');
+  // The bulk-merge offer lives in a row of fixed height, so it appearing or
+  // disappearing never moves the cards under the pointer.
+  const bulk = document.createElement('div');
+  bulk.className = 'similar-bulk';
   const grid = document.createElement('div');
   grid.className = 'similar-grid';
-  panel.append(head, status, grid);
+  panel.append(head, status, bulk, grid);
   overlay.appendChild(panel);
   document.body.appendChild(overlay);
 
-  const st = { id: person.id, person: { ...person }, overlay, anchorArt, title, sub,
-               status, grid, close, merged: 0, seq: 0, retries: 0, timer: null };
+  const st = { id: person.id, person: { ...person }, overlay, panel, anchorArt, title, sub,
+               status, bulk, grid, close, merged: 0, seq: 0, retries: 0, timer: null,
+               items: new Map(), bulkMode: false, bulkAt: 0.75, bulkMin: 4, busy: false };
   similarOpen = st;
   paintSimilarHead(st);
   setSimilarStatus(st, 'Looking for matches…');
@@ -2976,7 +2981,7 @@ async function loadSimilar(st) {
   clearTimeout(st.timer);
   let data;
   try {
-    const res = await fetch('/api/media/people/' + st.id + '/similar?limit=12');
+    const res = await fetch('/api/media/people/' + st.id + '/similar?limit=24');
     if (!res.ok) throw new Error(String(res.status));
     data = await res.json();
   } catch (e) {
@@ -2996,6 +3001,8 @@ async function loadSimilar(st) {
     return;
   }
   st.retries = 0;
+  if (typeof data.bulk_at === 'number') st.bulkAt = data.bulk_at;
+  if (typeof data.bulk_min === 'number') st.bulkMin = data.bulk_min;
   if (data.source) {
     st.person = { ...st.person, ...data.source };
     paintSimilarHead(st);
@@ -3011,22 +3018,145 @@ async function loadSimilar(st) {
 function renderSimilar(st, items) {
   const have = new Set([...st.grid.children].map((c) => c.dataset.id));
   for (const item of items) {
-    if (!have.has(String(item.id))) st.grid.appendChild(similarCard(st, item));
+    if (!have.has(String(item.id))) {
+      st.items.set(item.id, item);
+      st.grid.appendChild(similarCard(st, item));
+    }
   }
   refreshSimilarStatus(st);
 }
 
+function liveSimilarCards(st) {
+  return [...st.grid.querySelectorAll('.similar-card:not(.is-settled)')];
+}
+
 function refreshSimilarStatus(st) {
-  const n = st.grid.querySelectorAll('.similar-card:not(.is-settled)').length;
+  const n = liveSimilarCards(st).length;
   setSimilarStatus(st, n
     ? `${n} possible ${n === 1 ? 'match' : 'matches'}, best first`
     : (st.merged || st.grid.children.length ? 'No more matches.' : 'No other face looks like this one.'));
+  paintBulk(st);
+}
+
+/* Widening. When a lot of the suggestions score very high and none is a
+   cosplay pair (cosplayers of one character look alike), the panel offers to
+   merge them all at once: "Review them" marks exactly which tiles it would
+   fold in, each with a tick to take out, and only "Merge" does anything. */
+function bulkCandidates(st) {
+  return liveSimilarCards(st).filter((c) => Number(c.dataset.sim) >= st.bulkAt && c.dataset.cosplay !== '1');
+}
+
+function bulkPicked(st) {
+  return bulkCandidates(st).filter((c) => { const box = c.querySelector('.similar-pick input'); return box && box.checked; });
+}
+
+function paintBulk(st) {
+  st.bulk.textContent = '';
+  const pct = Math.round(st.bulkAt * 100);
+  if (st.bulkMode) {
+    const picked = bulkPicked(st);
+    const text = document.createElement('span');
+    text.textContent = `Merge ${picked.length} selected into “${personLabel(st.person)}”? Untick any that are not them.`;
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'btn similar-same';
+    go.textContent = `Merge ${picked.length}`;
+    go.disabled = !picked.length || st.busy;
+    go.addEventListener('click', () => mergeBulk(st));
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'btn btn-quiet';
+    no.textContent = 'Cancel';
+    no.disabled = st.busy;
+    no.addEventListener('click', () => exitBulk(st));
+    st.bulk.append(text, go, no);
+    return;
+  }
+  const cands = bulkCandidates(st);
+  if (cands.length >= st.bulkMin) {
+    const text = document.createElement('span');
+    text.textContent = `${cands.length} matches at ${pct}% or more — merge them all?`;
+    const review = document.createElement('button');
+    review.type = 'button';
+    review.className = 'btn';
+    review.textContent = 'Review them';
+    review.addEventListener('click', () => enterBulk(st));
+    st.bulk.append(text, review);
+  }
+}
+
+function enterBulk(st) {
+  st.bulkMode = true;
+  st.panel.classList.add('is-bulk');
+  const cands = new Set(bulkCandidates(st));
+  for (const card of liveSimilarCards(st)) {
+    if (cands.has(card)) {
+      card.classList.add('is-pick');
+      const label = document.createElement('label');
+      label.className = 'similar-pick';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = true;
+      box.addEventListener('change', () => paintBulk(st));
+      label.appendChild(box);
+      card.appendChild(label);
+    } else {
+      card.classList.add('is-out');
+      card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    }
+  }
+  paintBulk(st);
+}
+
+function exitBulk(st) {
+  st.bulkMode = false;
+  st.panel.classList.remove('is-bulk');
+  for (const card of st.grid.querySelectorAll('.similar-card')) {
+    card.classList.remove('is-pick', 'is-out');
+    card.querySelectorAll('.similar-pick').forEach((n) => n.remove());
+    if (!card.classList.contains('is-settled')) card.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+  }
+  paintBulk(st);
+}
+
+async function mergeBulk(st) {
+  const picked = bulkPicked(st);
+  if (!picked.length || st.busy) return;
+  if (!confirm(`Merge ${picked.length} people into "${personLabel(st.person)}"?\nThis cannot be undone.`)) return;
+  st.busy = true;
+  paintBulk(st);
+  let failed = false;
+  for (const card of picked) {
+    if (similarOpen !== st) return;
+    const item = st.items.get(Number(card.dataset.id));
+    if (!(await mergeOne(st, item, card, true))) { failed = true; break; }
+  }
+  st.busy = false;
+  if (similarOpen !== st) return;
+  paintSimilarHead(st);
+  exitBulk(st);
+  if (failed) alert('Stopped: one merge did not go through. The ones before it are done.');
+  refreshSimilarStatus(st);
+  loadSimilar(st);       // the anchor is bigger now: it may match people it could not
+}
+
+// What was decided, with the score it was decided at: the server keeps these so
+// the thresholds can be set from real judgements. Never blocks the panel.
+function logSimilarDecision(st, item, decision, bulk) {
+  fetch('/api/media/people/' + st.id + '/decision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ other: item.id, decision, score: item.similarity,
+                           likely: !!item.likely, cosplay: !!item.cosplay, bulk: !!bulk }),
+  }).catch(() => {});
 }
 
 function similarCard(st, item) {
   const card = document.createElement('div');
   card.className = 'similar-card' + (item.likely ? ' is-likely' : '');
   card.dataset.id = item.id;
+  card.dataset.sim = item.similarity;
+  card.dataset.cosplay = item.cosplay ? '1' : '0';
 
   const art = document.createElement('div');
   art.className = 'similar-cover';
@@ -3085,8 +3215,9 @@ function setCardBusy(card, busy) {
 
 // A dealt-with card keeps its size and place; its buttons give way to a label.
 function settleCard(card, label) {
-  card.classList.remove('is-busy');
+  card.classList.remove('is-busy', 'is-pick', 'is-out');
   card.classList.add('is-settled');
+  card.querySelectorAll('.similar-pick').forEach((n) => n.remove());
   card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
   const actions = card.querySelector('.similar-actions');
   const note = document.createElement('div');
@@ -3095,9 +3226,8 @@ function settleCard(card, label) {
   actions.appendChild(note);
 }
 
-async function mergeSimilar(st, item, card) {
-  const pct = Math.round(item.similarity * 100);
-  if (!item.likely && !confirm(`Only a ${pct}% match.\nMerge "${personLabel(item)}" into "${personLabel(st.person)}"?`)) return;
+// One merge of `item` into the anchor. True when it went through.
+async function mergeOne(st, item, card, bulk) {
   setCardBusy(card, true);
   let res;
   try {
@@ -3107,13 +3237,22 @@ async function mergeSimilar(st, item, card) {
       body: JSON.stringify({ merge_into: st.id }),
     });
   } catch (e) { res = null; }
-  if (!res || !res.ok) { setCardBusy(card, false); alert('Could not merge those.'); return; }
-  if (similarOpen !== st) return;
+  if (!res || !res.ok) { setCardBusy(card, false); return false; }
+  if (similarOpen !== st) return true;
   settleCard(card, 'Merged');
   st.merged += 1;
   st.person.count += item.count;
   // The server keeps whichever name exists, so an unnamed anchor takes the name.
   if (!st.person.name && item.name) st.person.name = item.name;
+  logSimilarDecision(st, item, 'merge', bulk);
+  return true;
+}
+
+async function mergeSimilar(st, item, card) {
+  const pct = Math.round(item.similarity * 100);
+  if (!item.likely && !confirm(`Only a ${pct}% match.\nMerge "${personLabel(item)}" into "${personLabel(st.person)}"?`)) return;
+  if (!(await mergeOne(st, item, card, false))) { alert('Could not merge those.'); return; }
+  if (similarOpen !== st) return;
   paintSimilarHead(st);
   refreshSimilarStatus(st);
   // The anchor is bigger now and may match people it could not before.
@@ -3132,6 +3271,7 @@ async function rejectSimilar(st, item, card) {
   } catch (e) { res = null; }
   if (!res || !res.ok) { setCardBusy(card, false); alert('Could not save that.'); return; }
   settleCard(card, 'Not them');
+  logSimilarDecision(st, item, 'not_same', false);
   if (similarOpen === st) refreshSimilarStatus(st);
 }
 
@@ -3148,7 +3288,8 @@ function closeSimilar(reload) {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && similarOpen) {
     e.stopPropagation();
-    closeSimilar(true);
+    if (similarOpen.bulkMode && !similarOpen.busy) exitBulk(similarOpen);   // Escape backs out of the review first
+    else if (!similarOpen.busy) closeSimilar(true);
   }
 }, true);
 
