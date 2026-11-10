@@ -706,6 +706,18 @@ SUGGEST_FACES = 60            # faces per side in the exact score
 SUGGEST_FLOOR = 0.50          # below this a pair is not offered
 SUGGEST_LIKELY = FACE_LINK_THRESHOLD   # at or above: "likely the same"
 SUGGEST_INDEX_TTL = 900.0     # seconds before the index is rebuilt behind a request
+# Cosplayers (2026-11-10, owner): make-up, wigs and the same costume make two
+# different people score about 70 % against each other, where the same celebrity
+# scores 77-80 % (Emma Watson: every suggestion right at 77-80 %). So a pair
+# where either side is mostly cosplay photos - SUGGEST_COSPLAY_SHARE of its
+# photos carry the tagger's `cosplay` tag - is held to a stricter bar: not
+# offered under SUGGEST_COSPLAY_FLOOR, and "likely" only from
+# SUGGEST_COSPLAY_LIKELY. Anything in between is still shown, without the
+# likely mark, and asks before it merges. Starting values, not measured: tune
+# them from the owner's judgements on real pairs.
+SUGGEST_COSPLAY_SHARE = 0.5
+SUGGEST_COSPLAY_FLOOR = 0.70
+SUGGEST_COSPLAY_LIKELY = 0.78
 _SUGGEST_CHUNK = 1500         # clusters per stage-1 matrix product (~37 MB of float32)
 
 
@@ -727,6 +739,20 @@ def cluster_faces(conn, cluster_id, limit):
     norm = np.linalg.norm(mat, axis=1, keepdims=True)
     norm[norm == 0] = 1.0
     return ids, mat / norm
+
+
+def cosplay_share(conn, cluster_id):
+    """Share of a cluster's photos carrying the `cosplay` tag, 0.0 when the
+    cluster has none or the tag does not exist (a library tagged by a model
+    that does not know it)."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS n, SUM(t.media_id IS NOT NULL) AS cos FROM"
+        " (SELECT DISTINCT media_id FROM faces WHERE cluster_id = ?) f"
+        " LEFT JOIN media_tags t ON t.media_id = f.media_id"
+        " AND t.category = 'general' AND t.tag = 'cosplay'",
+        (int(cluster_id),)).fetchone()
+    n = row["n"] or 0
+    return (row["cos"] or 0) / n if n else 0.0
 
 
 def link_score(a, b, min_unit=FACE_LINK_MIN_UNIT):
@@ -869,14 +895,19 @@ class SuggestIndex:
 
 
 def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
-                        floor=SUGGEST_FLOOR):
+                        floor=SUGGEST_FLOOR, detail=False):
     """[(cluster id, link score)] best first: the clusters most likely to be the
     same person as `cluster_id`, from the resident index then scored exactly.
-    `ok(cluster_id)` filters candidates (permissions, hidden, rejected pairs)."""
+    `ok(cluster_id)` filters candidates (permissions, hidden, rejected pairs).
+
+    detail=True returns dicts {id, score, cosplay, likely} instead, with the
+    stricter bar for cosplay pairs applied (see SUGGEST_COSPLAY_*); without it
+    the plain tuples keep their meaning and only `floor` applies."""
     _ids, xs = cluster_faces(conn, cluster_id, SUGGEST_FACES)
     if not len(xs):
         return []
     cluster_id = int(cluster_id)
+    source_cosplay = (cosplay_share(conn, cluster_id) >= SUGGEST_COSPLAY_SHARE) if detail else False
 
     def allowed(cid):
         return cid != cluster_id and (ok is None or ok(cid))
@@ -885,9 +916,16 @@ def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
     for cid in index.shortlist(xs, allowed):
         _fids, ys = cluster_faces(conn, cid, SUGGEST_FACES)
         s = link_score(xs, ys)
-        if s >= floor:
-            scored.append((cid, round(float(s), 4)))
-    scored.sort(key=lambda t: -t[1])
+        if not detail:
+            if s >= floor:
+                scored.append((cid, round(float(s), 4)))
+            continue
+        cosplay = source_cosplay or cosplay_share(conn, cid) >= SUGGEST_COSPLAY_SHARE
+        if s < (max(floor, SUGGEST_COSPLAY_FLOOR) if cosplay else floor):
+            continue
+        scored.append({"id": cid, "score": round(float(s), 4), "cosplay": cosplay,
+                       "likely": s >= (SUGGEST_COSPLAY_LIKELY if cosplay else SUGGEST_LIKELY)})
+    scored.sort(key=(lambda d: -d["score"]) if detail else (lambda t: -t[1]))
     return scored[:limit]
 
 

@@ -128,6 +128,51 @@ check("a 4-face cluster finds the big halves of its own person",
       {c for c, _ in found3} == {1, 2}, found3)
 found_b = media_faces.suggest_same_person(conn, index, 4)
 check("a person with no other half gets no suggestions", found_b == [], found_b)
+# ----------------------------------------------------- cosplayers: a higher bar --
+def media_of(cid):
+    return conn.execute("SELECT id FROM media WHERE path = ?", (f"pixiv/{cid}/f.jpg",)).fetchone()["id"]
+
+
+def tag_media(cid, tag, category="general"):
+    conn.execute("INSERT OR REPLACE INTO media_tags (media_id, tag, category, p) VALUES (?, ?, ?, 0.9)",
+                 (media_of(cid), tag, category))
+    conn.commit()
+
+
+check("no cosplay tag: a cluster's cosplay share is 0", media_faces.cosplay_share(conn, 2) == 0.0)
+tag_media(2, "cosplay", "character")
+check("... a `cosplay` tag of another category does not count", media_faces.cosplay_share(conn, 2) == 0.0)
+plain = media_faces.suggest_same_person(conn, index, 1)
+detail = media_faces.suggest_same_person(conn, index, 1, detail=True)
+check("detail=True with no cosplay tags: the same people, scores and order, flagged as ordinary",
+      [(d["id"], d["score"]) for d in detail] == plain and not any(d["cosplay"] for d in detail)
+      and all(d["likely"] == (d["score"] >= media_faces.SUGGEST_LIKELY) for d in detail), detail)
+s_two = dict(plain)[2]
+tag_media(2, "cosplay")
+check("a cluster whose photos all carry the tag has a cosplay share of 1", media_faces.cosplay_share(conn, 2) == 1.0)
+save = (media_faces.SUGGEST_COSPLAY_FLOOR, media_faces.SUGGEST_COSPLAY_LIKELY)
+try:
+    media_faces.SUGGEST_COSPLAY_FLOOR, media_faces.SUGGEST_COSPLAY_LIKELY = s_two - 0.02, s_two + 0.05
+    d = {x["id"]: x for x in media_faces.suggest_same_person(conn, index, 1, detail=True)}
+    check("a cosplay pair under the cosplay 'likely' bar is still offered, but not marked likely",
+          2 in d and d[2]["cosplay"] is True and d[2]["likely"] is False and d[3]["cosplay"] is False, d)
+    media_faces.SUGGEST_COSPLAY_FLOOR = s_two + 0.01
+    d = {x["id"] for x in media_faces.suggest_same_person(conn, index, 1, detail=True)}
+    check("... under the cosplay floor it is not offered at all, while the ordinary pair stays", 2 not in d and 3 in d, d)
+    check("... and without detail the old behaviour is untouched (tuples, the plain floor)",
+          2 in [c for c, _ in media_faces.suggest_same_person(conn, index, 1)])
+    media_faces.SUGGEST_COSPLAY_FLOOR, media_faces.SUGGEST_COSPLAY_LIKELY = s_two - 0.02, s_two - 0.01
+    d = {x["id"]: x for x in media_faces.suggest_same_person(conn, index, 1, detail=True)}
+    check("a cosplay pair over the cosplay 'likely' bar is marked likely", d[2]["cosplay"] and d[2]["likely"], d)
+    tag_media(1, "cosplay")
+    d = {x["id"]: x for x in media_faces.suggest_same_person(conn, index, 3, detail=True)}
+    check("a cosplay SOURCE holds every pair to the higher bar", all(x["cosplay"] for x in d.values()) and d, d)
+finally:
+    media_faces.SUGGEST_COSPLAY_FLOOR, media_faces.SUGGEST_COSPLAY_LIKELY = save
+    conn.execute("DELETE FROM media_tags WHERE tag = 'cosplay'")
+    conn.commit()
+check("tags removed again: the share is back to 0", media_faces.cosplay_share(conn, 2) == 0.0)
+
 check("the source is never offered to itself", 1 not in [c for c, _ in media_faces.suggest_same_person(conn, index, 1, limit=30, floor=-1)])
 check("the ok filter removes a candidate before it is scored",
       [c for c, _ in media_faces.suggest_same_person(conn, index, 1, ok=lambda c: c != 2)] == [3])

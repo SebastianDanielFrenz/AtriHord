@@ -8909,14 +8909,16 @@ def media_person_similar(cluster_id):
         return real.get(str(cid), real.get(cid, {})).get("real") is not False
 
     found = media_faces.suggest_same_person(conn, index, cluster_id,
-                                            ok=candidate_ok, limit=limit)
+                                            ok=candidate_ok, limit=limit, detail=True)
     levels = content_levels_map(wait=False)
     items = []
-    for cid, score in found:
-        item = discovery_person_item(conn, cid, auto, real, allowed, levels)
+    for hit in found:
+        item = discovery_person_item(conn, hit["id"], auto, real, allowed, levels)
         if item:
-            item["similarity"] = score
-            item["likely"] = score >= media_faces.SUGGEST_LIKELY
+            item["similarity"] = hit["score"]
+            # Cosplay pairs are held to a higher bar (media_faces.SUGGEST_COSPLAY_*).
+            item["likely"] = hit["likely"]
+            item["cosplay"] = hit["cosplay"]
             items.append(item)
     source = discovery_person_item(conn, cluster_id, auto, real, allowed, levels)
     return jsonify({"items": items, "loading": False, "source": source,

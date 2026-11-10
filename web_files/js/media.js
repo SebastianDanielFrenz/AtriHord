@@ -3003,17 +3003,24 @@ async function loadSimilar(st) {
   renderSimilar(st, data.items || []);
 }
 
+// Cards are never moved or removed while the panel is open: the list is asked
+// for again after every merge, and a grid that reflowed under the pointer made
+// the next click land on a different person. New matches are appended after the
+// cards already there, and a card that has been dealt with stays in its place,
+// greyed out, until the panel closes.
 function renderSimilar(st, items) {
-  st.grid.textContent = '';
-  for (const item of items) st.grid.appendChild(similarCard(st, item));
+  const have = new Set([...st.grid.children].map((c) => c.dataset.id));
+  for (const item of items) {
+    if (!have.has(String(item.id))) st.grid.appendChild(similarCard(st, item));
+  }
   refreshSimilarStatus(st);
 }
 
 function refreshSimilarStatus(st) {
-  const n = st.grid.children.length;
+  const n = st.grid.querySelectorAll('.similar-card:not(.is-settled)').length;
   setSimilarStatus(st, n
     ? `${n} possible ${n === 1 ? 'match' : 'matches'}, best first`
-    : (st.merged ? 'No more matches.' : 'No other face looks like this one.'));
+    : (st.merged || st.grid.children.length ? 'No more matches.' : 'No other face looks like this one.'));
 }
 
 function similarCard(st, item) {
@@ -3037,10 +3044,14 @@ function similarCard(st, item) {
   const pct = Math.round(item.similarity * 100);
   const score = document.createElement('div');
   score.className = 'similar-score';
-  score.textContent = pct + '% match';
+  score.textContent = pct + '% match' + (item.cosplay ? ' · cosplay' : '');
+  // Cosplayers of one character look alike (make-up, wigs): the server asks for a
+  // higher score before it calls such a pair likely.
   score.title = item.likely
     ? 'Faces of the two tiles match as well as faces of one person usually do'
-    : 'Weaker than a usual match of one person — look before merging';
+    : (item.cosplay
+      ? 'Cosplay photos: different people in the same costume can match this well — check the photos before merging'
+      : 'Weaker than a usual match of one person — look before merging');
 
   const name = document.createElement('div');
   name.className = 'person-name' + (item.name ? '' : (item.auto_name ? ' is-auto' : ' is-unnamed'));
@@ -3072,6 +3083,18 @@ function setCardBusy(card, busy) {
   card.querySelectorAll('button').forEach((b) => { b.disabled = busy; });
 }
 
+// A dealt-with card keeps its size and place; its buttons give way to a label.
+function settleCard(card, label) {
+  card.classList.remove('is-busy');
+  card.classList.add('is-settled');
+  card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  const actions = card.querySelector('.similar-actions');
+  const note = document.createElement('div');
+  note.className = 'similar-settled';
+  note.textContent = label;
+  actions.appendChild(note);
+}
+
 async function mergeSimilar(st, item, card) {
   const pct = Math.round(item.similarity * 100);
   if (!item.likely && !confirm(`Only a ${pct}% match.\nMerge "${personLabel(item)}" into "${personLabel(st.person)}"?`)) return;
@@ -3086,7 +3109,7 @@ async function mergeSimilar(st, item, card) {
   } catch (e) { res = null; }
   if (!res || !res.ok) { setCardBusy(card, false); alert('Could not merge those.'); return; }
   if (similarOpen !== st) return;
-  card.remove();
+  settleCard(card, 'Merged');
   st.merged += 1;
   st.person.count += item.count;
   // The server keeps whichever name exists, so an unnamed anchor takes the name.
@@ -3108,7 +3131,7 @@ async function rejectSimilar(st, item, card) {
     });
   } catch (e) { res = null; }
   if (!res || !res.ok) { setCardBusy(card, false); alert('Could not save that.'); return; }
-  card.remove();
+  settleCard(card, 'Not them');
   if (similarOpen === st) refreshSimilarStatus(st);
 }
 
