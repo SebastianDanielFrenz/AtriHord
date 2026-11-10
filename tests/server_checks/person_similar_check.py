@@ -105,16 +105,38 @@ check("a 4-face cluster is judged one way (its best matches in the big one), not
 check("... and the reverse direction alone would score it lower, which is why",
       media_faces._median_best_match(a1, a3) < s13, (media_faces._median_best_match(a1, a3), s13))
 check("an empty side scores 0", media_faces.link_score(a1, a1[:0]) == 0.0)
-# The green line is set from what the owner saw (2026-11-10): every correct
-# suggestion for a famous western face scored 0.77-0.80, every wrong cosplay one
-# 0.62-0.71. It must sit between the two, and must not be the auto-link line.
-check("the 'likely' line separates the observed correct (>= 0.77) from the observed wrong (<= 0.71) matches",
+# The green line is set from what the owner saw (2026-11-10): correct suggestions
+# for famous western faces 0.77-0.80, for Jenna Ortega 0.87 down to 0.70, wrong
+# ones for cosplayers 0.62-0.71 (best 0.68 / 0.71). The plain line must sit above
+# every wrong match and the strong line may go down to the lowest correct one.
+ORTEGA = [0.87, 0.83, 0.81, 0.77, 0.75, 0.74, 0.74, 0.73, 0.73] + [0.72] * 5 + [0.71] * 3 + [0.70] * 2
+EMMA = [0.80, 0.80, 0.79, 0.79, 0.78, 0.78, 0.78, 0.77, 0.77, 0.77, 0.77, 0.77]
+CHI_MUU = [0.68, 0.67, 0.66, 0.66, 0.65, 0.65, 0.64, 0.64, 0.63, 0.63, 0.62, 0.62]
+WELLCHANNEL = [0.71, 0.71, 0.70, 0.69, 0.68, 0.67, 0.66, 0.66, 0.65, 0.64, 0.63]
+check("the plain 'likely' line is above every observed wrong match (<= 0.71) and under the correct ones (>= 0.77)",
       0.71 < media_faces.SUGGEST_LIKELY <= 0.77, media_faces.SUGGEST_LIKELY)
 check("... and is no longer the 0.63 auto-link threshold that marked every cosplay match green",
       media_faces.SUGGEST_LIKELY > media_faces.FACE_LINK_THRESHOLD)
-check("the bulk offer starts at the likely line and needs several matches",
-      media_faces.SUGGEST_BULK_AT >= media_faces.SUGGEST_LIKELY and media_faces.SUGGEST_BULK_MIN >= 3,
-      (media_faces.SUGGEST_BULK_AT, media_faces.SUGGEST_BULK_MIN))
+check("the strong line reaches the lowest correct match seen (0.70) and is under the plain one",
+      media_faces.SUGGEST_LIKELY_STRONG <= 0.70 < media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_LIKELY_STRONG)
+check("an anchor with many high matches (Ortega: 5 at 0.75+, Emma Watson: 12) is judged by the strong line",
+      media_faces.likely_line(ORTEGA) == media_faces.SUGGEST_LIKELY_STRONG
+      and media_faces.likely_line(EMMA) == media_faces.SUGGEST_LIKELY_STRONG)
+check("... a cosplayer's matches (none at 0.75) keep the plain line, and none of them reaches it",
+      media_faces.likely_line(CHI_MUU) == media_faces.SUGGEST_LIKELY and media_faces.likely_line(WELLCHANNEL) == media_faces.SUGGEST_LIKELY
+      and not any(s >= media_faces.SUGGEST_LIKELY for s in CHI_MUU + WELLCHANNEL))
+check("... under the strong line every correct Ortega match is likely, and 100 % of the cosplayers' would NOT be spared if they had a core",
+      all(s >= media_faces.SUGGEST_LIKELY_STRONG for s in ORTEGA))
+check("counts, not one match: a few high scores alone are not enough, nor a crowd at 0.70 without a high core",
+      media_faces.likely_line([0.85, 0.80, 0.76]) == media_faces.SUGGEST_LIKELY
+      and media_faces.likely_line([0.85, 0.80] + [0.72] * 10) == media_faces.SUGGEST_LIKELY
+      and media_faces.likely_line([0.76, 0.76, 0.76] + [0.66] * 10) == media_faces.SUGGEST_LIKELY
+      and media_faces.likely_line([0.76, 0.76, 0.76] + [0.71] * 5) == media_faces.SUGGEST_LIKELY_STRONG
+      and media_faces.likely_line([]) == media_faces.SUGGEST_LIKELY)
+check("the observed counts fall on the right sides of the two minimums (cosplayers <= 3 at 0.70, celebrities >= 12)",
+      sum(s >= 0.70 for s in CHI_MUU + WELLCHANNEL) <= 3 and sum(s >= 0.70 for s in EMMA) >= 12
+      and sum(s >= 0.70 for s in CHI_MUU) < media_faces.SUGGEST_WIDE_MIN <= sum(s >= 0.70 for s in EMMA)
+      and media_faces.SUGGEST_BULK_MIN >= 3 and media_faces.SUGGEST_CORE_MIN >= 3)
 
 # ------------------------------------------------------------------- search --
 index = media_faces.SuggestIndex()
@@ -138,50 +160,35 @@ check("a 4-face cluster finds the big halves of its own person",
       {c for c, _ in found3} == {1, 2}, found3)
 found_b = media_faces.suggest_same_person(conn, index, 4)
 check("a person with no other half gets no suggestions", found_b == [], found_b)
-# ----------------------------------------------------- cosplayers: a higher bar --
-def media_of(cid):
-    return conn.execute("SELECT id FROM media WHERE path = ?", (f"pixiv/{cid}/f.jpg",)).fetchone()["id"]
-
-
-def tag_media(cid, tag, category="general"):
-    conn.execute("INSERT OR REPLACE INTO media_tags (media_id, tag, category, p) VALUES (?, ?, ?, 0.9)",
-                 (media_of(cid), tag, category))
-    conn.commit()
-
-
-check("no cosplay tag: a cluster's cosplay share is 0", media_faces.cosplay_share(conn, 2) == 0.0)
-tag_media(2, "cosplay", "character")
-check("... a `cosplay` tag of another category does not count", media_faces.cosplay_share(conn, 2) == 0.0)
+# ------------------------------------------------ the line moves with the core --
 plain = media_faces.suggest_same_person(conn, index, 1)
 detail = media_faces.suggest_same_person(conn, index, 1, detail=True)
-check("detail=True with no cosplay tags: the same people, scores and order, flagged as ordinary",
-      [(d["id"], d["score"]) for d in detail] == plain and not any(d["cosplay"] for d in detail)
-      and all(d["likely"] == (d["score"] >= media_faces.SUGGEST_LIKELY) for d in detail), detail)
-s_two = dict(plain)[2]
-tag_media(2, "cosplay")
-check("a cluster whose photos all carry the tag has a cosplay share of 1", media_faces.cosplay_share(conn, 2) == 1.0)
-save = (media_faces.SUGGEST_COSPLAY_FLOOR, media_faces.SUGGEST_COSPLAY_LIKELY)
+check("detail=True: the same people, scores and order, 'likely' by the line the scores give, no cosplay field",
+      [(d["id"], d["score"]) for d in detail] == plain and not any("cosplay" in d for d in detail)
+      and all(d["likely"] == (d["score"] >= media_faces.likely_line([s for _, s in plain])) for d in detail), detail)
+saved = (media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_CORE_MIN, media_faces.SUGGEST_LIKELY_STRONG, media_faces.SUGGEST_WIDE_MIN)
+low, high = min(s for _, s in plain), max(s for _, s in plain)
 try:
-    media_faces.SUGGEST_COSPLAY_FLOOR, media_faces.SUGGEST_COSPLAY_LIKELY = s_two - 0.02, s_two + 0.05
-    d = {x["id"]: x for x in media_faces.suggest_same_person(conn, index, 1, detail=True)}
-    check("a cosplay pair under the cosplay 'likely' bar is still offered, but not marked likely",
-          2 in d and d[2]["cosplay"] is True and d[2]["likely"] is False and d[3]["cosplay"] is False, d)
-    media_faces.SUGGEST_COSPLAY_FLOOR = s_two + 0.01
-    d = {x["id"] for x in media_faces.suggest_same_person(conn, index, 1, detail=True)}
-    check("... under the cosplay floor it is not offered at all, while the ordinary pair stays", 2 not in d and 3 in d, d)
-    check("... and without detail the old behaviour is untouched (tuples, the plain floor)",
-          2 in [c for c, _ in media_faces.suggest_same_person(conn, index, 1)])
-    media_faces.SUGGEST_COSPLAY_FLOOR, media_faces.SUGGEST_COSPLAY_LIKELY = s_two - 0.02, s_two - 0.01
-    d = {x["id"]: x for x in media_faces.suggest_same_person(conn, index, 1, detail=True)}
-    check("a cosplay pair over the cosplay 'likely' bar is marked likely", d[2]["cosplay"] and d[2]["likely"], d)
-    tag_media(1, "cosplay")
-    d = {x["id"]: x for x in media_faces.suggest_same_person(conn, index, 3, detail=True)}
-    check("a cosplay SOURCE holds every pair to the higher bar", all(x["cosplay"] for x in d.values()) and d, d)
+    # plain line = the best score; strong line = under the lowest; two matches reach it.
+    media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_LIKELY_STRONG, media_faces.SUGGEST_WIDE_MIN = high, low - 0.02, 2
+    media_faces.SUGGEST_CORE_MIN = 2
+    d = media_faces.suggest_same_person(conn, index, 1, detail=True)
+    check("too few high matches for a core: the plain line applies (only the best one is likely)",
+          [x["likely"] for x in d] == [True, False], d)
+    media_faces.SUGGEST_CORE_MIN = 1
+    d = media_faces.suggest_same_person(conn, index, 1, detail=True)
+    check("a core and a crowd: the strong line applies and both are likely", [x["likely"] for x in d] == [True, True], d)
+    media_faces.SUGGEST_WIDE_MIN = 3
+    d = media_faces.suggest_same_person(conn, index, 1, detail=True)
+    check("... a core without the crowd (3 needed, 2 found): plain line again", [x["likely"] for x in d] == [True, False], d)
 finally:
-    media_faces.SUGGEST_COSPLAY_FLOOR, media_faces.SUGGEST_COSPLAY_LIKELY = save
-    conn.execute("DELETE FROM media_tags WHERE tag = 'cosplay'")
-    conn.commit()
-check("tags removed again: the share is back to 0", media_faces.cosplay_share(conn, 2) == 0.0)
+    media_faces.SUGGEST_LIKELY, media_faces.SUGGEST_CORE_MIN, media_faces.SUGGEST_LIKELY_STRONG, media_faces.SUGGEST_WIDE_MIN = saved
+check("without detail the tuples and the plain floor are untouched",
+      media_faces.suggest_same_person(conn, index, 1) == plain)
+check("a cosplay tag changes nothing (the tag marks Ortega's photos too)",
+      (conn.execute("INSERT OR REPLACE INTO media_tags (media_id, tag, category, p) SELECT id, 'cosplay', 'general', 0.9 FROM media"),
+       media_faces.suggest_same_person(conn, index, 1, detail=True) == detail,
+       conn.execute("DELETE FROM media_tags WHERE tag = 'cosplay'"), conn.commit())[1])
 
 check("the source is never offered to itself", 1 not in [c for c, _ in media_faces.suggest_same_person(conn, index, 1, limit=30, floor=-1)])
 check("the ok filter removes a candidate before it is scored",
@@ -334,8 +341,9 @@ if have_flask:
           [i["id"] for i in body["items"]] == [3] and body["items"][0]["similarity"] >= media_faces.SUGGEST_LIKELY
           and body["items"][0]["likely"] is True and body["source"]["id"] == 1, body)
     check("the response carries the bulk-offer constants for the page",
-          body["bulk_at"] == media_faces.SUGGEST_BULK_AT and body["bulk_min"] == media_faces.SUGGEST_BULK_MIN
-          and body["likely_at"] == media_faces.SUGGEST_LIKELY, body)
+          body["bulk_min"] == media_faces.SUGGEST_BULK_MIN
+          and body["likely_at"] == body["bulk_at"] == media_faces.likely_line([i["similarity"] for i in body["items"]])
+          and not any("cosplay" in i for i in body["items"]), body)
     check("... as full People tiles (count, cover face)",
           body["items"][0]["count"] >= 1 and body["items"][0]["face_id"] == face_ids[3][0], body["items"][0])
     rv, code = get("/api/media/people/777/similar", cid=777)
@@ -379,20 +387,20 @@ if have_flask:
     # The decision log: a JSONL file beside the index, never a table.
     log = os.path.join(media_ai.store_dir(tmp), "person_decisions.jsonl")
     check("no decision log before a decision", not os.path.exists(log))
-    good = {"other": 3, "decision": "merge", "score": 0.7812, "likely": True, "cosplay": False, "bulk": True}
+    good = {"other": 3, "decision": "merge", "score": 0.7812, "likely": True, "line": 0.7, "bulk": True}
     rv, code = post("/api/media/people/1/decision", good, "media_person_decision", 1)
     check("a decision is logged", code == 200 and rv.get_json() == {"ok": True}, (code, rv.get_json()))
     rv, code = post("/api/media/people/1/decision", {**good, "decision": "not_same", "score": 0.66, "likely": False,
-                                                    "cosplay": True, "bulk": False}, "media_person_decision", 1)
+                                                    "line": 0.75, "bulk": False}, "media_person_decision", 1)
     import json as _json
     rows = [_json.loads(x) for x in open(log, encoding="utf-8").read().splitlines()]
     check("... one JSON line each, with the pair, the score and the flags it was judged with",
           len(rows) == 2 and rows[0]["anchor"] == 1 and rows[0]["other"] == 3 and rows[0]["decision"] == "merge"
           and rows[0]["score"] == 0.7812 and rows[0]["likely"] is True and rows[0]["bulk"] is True
-          and rows[0]["user"] == "alice" and rows[1]["decision"] == "not_same" and rows[1]["cosplay"] is True
+          and rows[0]["user"] == "alice" and rows[1]["decision"] == "not_same" and rows[1]["line"] == 0.75 and rows[0]["line"] == 0.7
           and rows[1]["bulk"] is False and isinstance(rows[0]["at"], float), rows)
     for bad in ({**good, "decision": "delete"}, {**good, "score": 1.5}, {**good, "score": "x"},
-                {**good, "other": 1}, {"decision": "merge", "score": 0.7}):
+                {**good, "other": 1}, {**good, "line": 2}, {"decision": "merge", "score": 0.7}):
         rv, code = post("/api/media/people/1/decision", bad, "media_person_decision", 1)
         check("a malformed decision is a 400 and writes nothing: %s" % (bad,), code == 400, code)
     check("... the log still has its two lines", len(open(log, encoding="utf-8").read().splitlines()) == 2)

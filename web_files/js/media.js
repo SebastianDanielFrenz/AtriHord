@@ -3044,12 +3044,13 @@ function refreshSimilarStatus(st) {
   paintBulk(st);
 }
 
-/* Widening. When a lot of the suggestions score very high and none is a
-   cosplay pair (cosplayers of one character look alike), the panel offers to
-   merge them all at once: "Review them" marks exactly which tiles it would
-   fold in, each with a tick to take out, and only "Merge" does anything. */
+/* Widening. When several suggestions reach the likely line the server gives
+   (it drops from 75 % to 70 % for an anchor with three or more matches
+   already at 75 %: a person the library knows well), the panel offers to merge them all at
+   once: "Review them" marks exactly which tiles it would fold in, each with a
+   tick to take out, and only "Merge" does anything. */
 function bulkCandidates(st) {
-  return liveSimilarCards(st).filter((c) => Number(c.dataset.sim) >= st.bulkAt && c.dataset.cosplay !== '1');
+  return liveSimilarCards(st).filter((c) => Number(c.dataset.sim) >= st.bulkAt);
 }
 
 function bulkPicked(st) {
@@ -3152,7 +3153,7 @@ function logSimilarDecision(st, item, decision, bulk) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ other: item.id, decision, score: item.similarity,
-                           likely: !!item.likely, cosplay: !!item.cosplay, bulk: !!bulk }),
+                           likely: !!item.likely, line: st.bulkAt, bulk: !!bulk }),
   }).catch(() => {});
 }
 
@@ -3161,7 +3162,6 @@ function similarCard(st, item) {
   card.className = 'similar-card' + (item.likely ? ' is-likely' : '');
   card.dataset.id = item.id;
   card.dataset.sim = item.similarity;
-  card.dataset.cosplay = item.cosplay ? '1' : '0';
 
   const art = document.createElement('div');
   art.className = 'similar-cover';
@@ -3179,14 +3179,10 @@ function similarCard(st, item) {
   const pct = Math.round(item.similarity * 100);
   const score = document.createElement('div');
   score.className = 'similar-score';
-  score.textContent = pct + '% match' + (item.cosplay ? ' · cosplay' : '');
-  // Cosplayers of one character look alike (make-up, wigs): the server asks for a
-  // higher score before it calls such a pair likely.
+  score.textContent = pct + '% match';
   score.title = item.likely
     ? 'Faces of the two tiles match as well as faces of one person usually do'
-    : (item.cosplay
-      ? 'Cosplay photos: different people in the same costume can match this well — check the photos before merging'
-      : 'Weaker than a usual match of one person — look before merging');
+    : 'Weaker than a usual match of one person — look before merging';
 
   const name = document.createElement('div');
   name.className = 'person-name' + (item.name ? '' : (item.auto_name ? ' is-auto' : ' is-unnamed'));

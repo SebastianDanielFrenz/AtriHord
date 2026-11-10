@@ -705,39 +705,52 @@ SUGGEST_SHORTLIST = 40        # clusters scored exactly
 SUGGEST_FACES = 60            # faces per side in the exact score
 SUGGEST_FLOOR = 0.50          # below this a pair is not offered
 # "Likely the same" (green) is NOT the auto-link threshold. Measured on the
-# owner's library 2026-11-10: every correct suggestion for a famous western
-# face (Emma Watson, Dua Lipa, Zendaya) scored 0.77-0.80, every wrong one for
-# cosplayers (different people, wigs, costumes) 0.62-0.71. FACE_LINK_THRESHOLD
-# (0.63) is a floor for joining faces into one cluster automatically; as a
-# green "go ahead" it marked all of those wrong cosplay matches. The middle of
-# the gap is 0.74; 0.75 keeps every observed correct match and no observed wrong
-# one. Starting value: person_decisions.jsonl (server) records each judgement
-# with its score so it can be re-derived.
+# owner's library 2026-11-10:
+#   - famous western faces (Emma Watson, Dua Lipa, Zendaya): every correct
+#     suggestion 0.77-0.80;
+#   - Jenna Ortega (anchor of 57 photos): 19 correct suggestions, 0.87 0.83 0.81
+#     0.77 0.75 0.74 0.74 0.73 0.73 0.72 x5 0.71 x3 0.70 x2 - correct all the
+#     way down, because one person's pictures differ (hair, light, age, make-up);
+#   - cosplayers (@chi_muu2438 and @wellchannel0214: different people in wigs
+#     and costumes): every WRONG suggestion 0.62-0.71, best one 0.68 / 0.71.
+# FACE_LINK_THRESHOLD (0.63) is a floor for joining faces into one cluster
+# automatically; as a green "go ahead" it marked all of those wrong cosplay
+# matches. So the line depends on how well the library knows the anchor, judged
+# by HOW MANY suggestions score high (owner's hint, 2026-11-10: "15+ faces here
+# match >= 70 %"). Counts of suggestions at 0.70+ / at 0.75+: Ortega 19 / 5,
+# Emma Watson 12 / 12, Dua Lipa dozens; the cosplayers 0-3 / 0 (their best is
+# 0.68 and 0.71). With at least SUGGEST_WIDE_MIN (8) at SUGGEST_LIKELY_STRONG AND
+# at least SUGGEST_CORE_MIN (3) at SUGGEST_LIKELY the anchor is an identity the
+# library knows well, and the line drops to SUGGEST_LIKELY_STRONG (0.70, the
+# lowest correct match seen); otherwise it stays SUGGEST_LIKELY (0.75: above
+# every wrong match seen). Two counts are steadier than the best match alone,
+# which one near-duplicate cluster could lift, and need a crowd of lookalikes to
+# be fooled (the gaps: 8 sits between 3 and 12). Starting values:
+# the server's person_decisions.jsonl records each judgement with the line it
+# was made under, to re-derive them. The `cosplay` tag is NOT used - it marks
+# Jenna Ortega's photos as cosplay (Wednesday) and a cosplayer's 8 %.
 SUGGEST_LIKELY = 0.75
-# The bulk offer ("N matches at 75 % or more - merge them all?"): at least
-# SUGGEST_BULK_MIN non-cosplay suggestions at or above SUGGEST_BULK_AT. Four,
-# because a person split into many pieces (Dua Lipa, Emma Watson: dozens) is
+SUGGEST_CORE_MIN = 3
+SUGGEST_WIDE_MIN = 8
+SUGGEST_LIKELY_STRONG = 0.70
+# The bulk offer ("N matches at 70 % or more - merge them all?"): at least
+# SUGGEST_BULK_MIN suggestions at or above the likely line. Four, because a
+# person split into many pieces (Dua Lipa, Emma Watson, Jenna Ortega: dozens) is
 # what it is for; one or two high matches are better handled one by one.
-SUGGEST_BULK_AT = SUGGEST_LIKELY
 SUGGEST_BULK_MIN = 4
 SUGGEST_INDEX_TTL = 900.0     # seconds before the index is rebuilt behind a request
-# Cosplayers (2026-11-10, owner): make-up, wigs and the same costume make two
-# different people score about 70 % against each other, where the same celebrity
-# scores 77-80 % (Emma Watson: every suggestion right at 77-80 %). So a pair
-# where either side is mostly cosplay photos - SUGGEST_COSPLAY_SHARE of its
-# photos carry the tagger's `cosplay` tag - is held to a stricter bar: not
-# offered under SUGGEST_COSPLAY_FLOOR, and "likely" only from
-# SUGGEST_COSPLAY_LIKELY. Anything in between is still shown, without the
-# likely mark, and asks before it merges. Starting values, not measured: tune
-# them from the owner's judgements on real pairs.
-# LIMIT OF THE TAG (measured on the live index): the share does not separate
-# the cases. @chi_muu2438 (cosplayer) 0.46, @wellchannel0214 (cosplayer) 0.08,
-# Dua Lipa 0.30, Emma Watson 0.24 - the tagger does not reliably call wig and
-# costume photos `cosplay`. The plain SUGGEST_LIKELY line is what protects the
-# untagged ones; this only tightens clusters the tagger did recognise.
-SUGGEST_COSPLAY_SHARE = 0.5
-SUGGEST_COSPLAY_FLOOR = 0.70
-SUGGEST_COSPLAY_LIKELY = 0.78
+
+
+def likely_line(scores):
+    """The score from which a suggestion is 'likely' (and enters the bulk offer),
+    given the scores of the anchor's suggestions: SUGGEST_LIKELY_STRONG when at
+    least SUGGEST_WIDE_MIN of them reach it and at least SUGGEST_CORE_MIN reach
+    SUGGEST_LIKELY, else SUGGEST_LIKELY."""
+    core = sum(1 for s in scores if s >= SUGGEST_LIKELY)
+    wide = sum(1 for s in scores if s >= SUGGEST_LIKELY_STRONG)
+    return SUGGEST_LIKELY_STRONG if (core >= SUGGEST_CORE_MIN and wide >= SUGGEST_WIDE_MIN) else SUGGEST_LIKELY
+
+
 _SUGGEST_CHUNK = 1500         # clusters per stage-1 matrix product (~37 MB of float32)
 
 
@@ -759,20 +772,6 @@ def cluster_faces(conn, cluster_id, limit):
     norm = np.linalg.norm(mat, axis=1, keepdims=True)
     norm[norm == 0] = 1.0
     return ids, mat / norm
-
-
-def cosplay_share(conn, cluster_id):
-    """Share of a cluster's photos carrying the `cosplay` tag, 0.0 when the
-    cluster has none or the tag does not exist (a library tagged by a model
-    that does not know it)."""
-    row = conn.execute(
-        "SELECT COUNT(*) AS n, SUM(t.media_id IS NOT NULL) AS cos FROM"
-        " (SELECT DISTINCT media_id FROM faces WHERE cluster_id = ?) f"
-        " LEFT JOIN media_tags t ON t.media_id = f.media_id"
-        " AND t.category = 'general' AND t.tag = 'cosplay'",
-        (int(cluster_id),)).fetchone()
-    n = row["n"] or 0
-    return (row["cos"] or 0) / n if n else 0.0
 
 
 def link_score(a, b, min_unit=FACE_LINK_MIN_UNIT):
@@ -920,14 +919,13 @@ def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
     same person as `cluster_id`, from the resident index then scored exactly.
     `ok(cluster_id)` filters candidates (permissions, hidden, rejected pairs).
 
-    detail=True returns dicts {id, score, cosplay, likely} instead, with the
-    stricter bar for cosplay pairs applied (see SUGGEST_COSPLAY_*); without it
-    the plain tuples keep their meaning and only `floor` applies."""
+    detail=True returns dicts {id, score, likely} instead, `likely` judged by
+    likely_line() of the scores found (see SUGGEST_LIKELY); without it the
+    plain tuples keep their meaning and only `floor` applies."""
     _ids, xs = cluster_faces(conn, cluster_id, SUGGEST_FACES)
     if not len(xs):
         return []
     cluster_id = int(cluster_id)
-    source_cosplay = (cosplay_share(conn, cluster_id) >= SUGGEST_COSPLAY_SHARE) if detail else False
 
     def allowed(cid):
         return cid != cluster_id and (ok is None or ok(cid))
@@ -936,17 +934,14 @@ def suggest_same_person(conn, index, cluster_id, ok=None, limit=12,
     for cid in index.shortlist(xs, allowed):
         _fids, ys = cluster_faces(conn, cid, SUGGEST_FACES)
         s = link_score(xs, ys)
-        if not detail:
-            if s >= floor:
-                scored.append((cid, round(float(s), 4)))
-            continue
-        cosplay = source_cosplay or cosplay_share(conn, cid) >= SUGGEST_COSPLAY_SHARE
-        if s < (max(floor, SUGGEST_COSPLAY_FLOOR) if cosplay else floor):
-            continue
-        scored.append({"id": cid, "score": round(float(s), 4), "cosplay": cosplay,
-                       "likely": s >= (SUGGEST_COSPLAY_LIKELY if cosplay else SUGGEST_LIKELY)})
-    scored.sort(key=(lambda d: -d["score"]) if detail else (lambda t: -t[1]))
-    return scored[:limit]
+        if s >= floor:
+            scored.append((cid, round(float(s), 4)))
+    scored.sort(key=lambda t: -t[1])
+    scored = scored[:limit]
+    if not detail:
+        return scored
+    line = likely_line([s for _, s in scored])
+    return [{"id": cid, "score": s, "likely": s >= line} for cid, s in scored]
 
 
 def _cover_of(conn, cluster_id):
