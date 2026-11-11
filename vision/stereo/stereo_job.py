@@ -419,7 +419,8 @@ def phase_interp(job, prog, src, plan, profile):
     cmd = [VIDINTERP, "-i", src, "-o", part, "--fps", str(int(profile["fps"])), "--encoder", "hevc_nvenc",
            "--quality", str(profile["interp_quality"]), "-d", LSFG_DLL]
     if profile.get("interp_dedup", True):
-        cmd += ["--dedup", "--max-hold", str(int(profile.get("interp_max_hold", 6)))]
+        # --decode cpu: --dedup deadlocked on the NVDEC path for some sources (2026-11-11)
+        cmd += ["--dedup", "--max-hold", str(int(profile.get("interp_max_hold", 6))), "--decode", "cpu"]
     if plan["stored_max_height"]:
         cmd += ["--max-height", str(plan["stored_max_height"])]
     log("interpolate:", " ".join(cmd))

@@ -1070,7 +1070,11 @@ def interp_dedup_args(icfg) -> list:
     """The vidinterp-gpu options for held frames (see interp_config)."""
     if not icfg["dedup"]:
         return []
-    return ["--dedup", "--max-hold", str(icfg["max_hold"]), "--dup-threshold", f"{icfg['dup_threshold']:g}"]
+    # --decode cpu: with --dedup the NVDEC path deadlocked on some sources (2026-11-11, a 60 fps portrait
+    # AV1 with 72 % held frames: a segment job never finished); CPU decode completes and is only ~25 %
+    # slower on 4K (still > 1.3x real time).
+    return ["--dedup", "--max-hold", str(icfg["max_hold"]), "--dup-threshold", f"{icfg['dup_threshold']:g}",
+            "--decode", "cpu"]
 
 
 def interp_streams():
