@@ -102,10 +102,14 @@ struct Options {
     // the whole run. A frame is held when its mean absolute difference from the
     // frame before it, on scdet's scale (percent of full range, measured on the
     // 480-px copy), is below dupThreshold: 0.14 = the 0.35 of 255 of vidinterp.cpp.
-    // A run longer than maxHold source frames is a deliberate still: it is held and
-    // only its last source interval interpolated.
+    // A run is never longer than maxHold source frames: from the next frame on, every
+    // frame is interpolated as without --dedup (a long still or subtle motion is not
+    // frozen). holdRatio: a frame is also held when its difference is below this x the
+    // move the picture it repeats arrived with (capped at 1.0 - a pose that steps every
+    // third frame over a background that keeps drifting never goes below dupThreshold).
     bool dedup{false};
     double dupThreshold{0.14};
+    double holdRatio{0.65};
     int maxHold{6};
 };
 
@@ -165,6 +169,7 @@ Options parse(int argc, char** argv) {
         else if (a == "--dedup") o.dedup = true;
         else if (a == "--dup-threshold") o.dupThreshold = std::stod(next());
         else if (a == "--max-hold") o.maxHold = std::stoi(next());
+        else if (a == "--hold-ratio") o.holdRatio = std::stod(next());
         else if (a == "--max-height") o.maxHeight = std::stoi(next());
         else if (a == "--encoder") o.encoder = next();
         else if (a == "--quality") o.quality = std::stoi(next());
@@ -1266,6 +1271,7 @@ int run(const Options& o) {
     // margins around their segments for the runs at their ends (see lead / lag).
     int64_t prevRun{1};
     double prevDistinctMafd{0};
+    double anchorMotion{0};   // the move the current picture arrived with (0 after a cut: unknown)
     auto onSource = [&](FramePtr cur, bool cut, bool forcedCut, double mafd) {
         if (boundaryReached) return;
         TRACE("source %lu%s", (unsigned long)nIn, cut ? " (cut)" : "");
@@ -1289,7 +1295,17 @@ int run(const Options& o) {
             // would look like a jump. Compare with the last distinct move instead.
             cut = forcedCut
                 || (o.scene > 0 && std::min(mafd, std::fabs(mafd - prevDistinctMafd)) >= o.scene);
-            if (!cut && !boundaryReached && mafd < o.dupThreshold) {
+            // A frame is a held repeat only if (1) its difference from its predecessor is below the
+            // limit: dupThreshold, when the picture it repeats arrived with at least that much of a
+            // move (after a quiet frame small differences are subtle motion, not held-pose noise), or
+            // holdRatio x that move (capped at 1.0), whichever is larger - a pose that steps every
+            // third frame over a background that keeps drifting never goes below dupThreshold, but
+            // its held frames are clearly smaller than the step - and (2) the run is shorter than
+            // maxHold. A run is therefore never longer than maxHold (the "long still: hold" branch of
+            // emitInterval cannot happen) and everything after it is interpolated frame by frame.
+            const double holdLimit{std::max(anchorMotion >= o.dupThreshold ? o.dupThreshold : 0.0,
+                                            std::min(o.holdRatio * anchorMotion, 1.0))};
+            if (!cut && !boundaryReached && mafd < holdLimit && prevRun < o.maxHold) {
                 prevRun++;
                 nHeld++;
                 return;
@@ -1300,6 +1316,7 @@ int run(const Options& o) {
         prevIndex = srcIndex;
         prevRun = 1;
         prevDistinctMafd = mafd;
+        anchorMotion = cut ? 0.0 : mafd;
 
         const auto now{std::chrono::steady_clock::now()};
         if (now - lastReport > std::chrono::seconds(5)) {

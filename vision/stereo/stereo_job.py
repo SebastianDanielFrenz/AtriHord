@@ -420,7 +420,10 @@ def phase_interp(job, prog, src, plan, profile):
            "--quality", str(profile["interp_quality"]), "-d", LSFG_DLL]
     if profile.get("interp_dedup", True):
         # --decode cpu: --dedup deadlocked on the NVDEC path for some sources (2026-11-11)
-        cmd += ["--dedup", "--max-hold", str(int(profile.get("interp_max_hold", 6))), "--decode", "cpu"]
+        # --dup-threshold 0.30: a lossy re-encode leaves held frames differing by 0.15-0.25 (percent), above
+        # the binary's 0.14 default, so they were interpolated as motion (2026-11-11, the 千夜未来 video)
+        cmd += ["--dedup", "--max-hold", str(int(profile.get("interp_max_hold", 6))),
+                "--dup-threshold", f"{float(profile.get('interp_dup_threshold', 0.30)):g}", "--decode", "cpu"]
     if plan["stored_max_height"]:
         cmd += ["--max-height", str(plan["stored_max_height"])]
     log("interpolate:", " ".join(cmd))
