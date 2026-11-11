@@ -7,6 +7,11 @@
 //     -> NVENC (via Vulkan->CUDA transfer) or a CPU encoder (via download)
 //     -> mux (MP4/MKV file, or fragmented MP4 on stdout) together with the source audio.
 //
+// --dedup: a source that holds frames (animation on twos or threes, a frame-doubled
+// upload) has runs of identical frames; interpolating each consecutive pair would
+// interpolate identical pictures and keep the stutter. With --dedup a run is one
+// picture, and the motion is generated across the whole run (see onSource).
+//
 // The output rate is a whole multiple of the input (-m) or any rate above it
 // (--fps), each frame generated at its exact position between two source frames.
 // That uses lsfg-vk's Context::acquireAt(), which is not upstream: it is our patch
@@ -93,6 +98,15 @@ struct Options {
     int startSeg{0};
     int endSeg{-1};
     bool verbose{false};
+    // --dedup: collapse runs of held (identical) source frames and interpolate across
+    // the whole run. A frame is held when its mean absolute difference from the
+    // frame before it, on scdet's scale (percent of full range, measured on the
+    // 480-px copy), is below dupThreshold: 0.14 = the 0.35 of 255 of vidinterp.cpp.
+    // A run longer than maxHold source frames is a deliberate still: it is held and
+    // only its last source interval interpolated.
+    bool dedup{false};
+    double dupThreshold{0.14};
+    int maxHold{6};
 };
 
 [[noreturn]] void usage(const char* argv0) {
@@ -107,6 +121,11 @@ struct Options {
         "  -p                LSFG performance mode\n"
         "  --no-fp16         disable fp16 shaders\n"
         "  --scene T         scene-cut threshold, scdet scale (default 10, 0 = off)\n"
+        "  --dedup           collapse held (identical) frames and interpolate across them\n"
+        "  --dup-threshold T mean frame difference below which a frame is held, scdet\n"
+        "                    scale, percent (default 0.14)\n"
+        "  --max-hold N      longest held run, in source frames, interpolated across;\n"
+        "                    a longer one is held and only its last interval moves (default 6)\n"
         "  --max-height H    downscale above this height\n"
         "  --encoder E       auto | av1_nvenc | hevc_nvenc | h264_nvenc | libx264 | libsvtav1\n"
         "  --quality Q       cq (nvenc) or crf (cpu encoders)\n"
@@ -143,6 +162,9 @@ Options parse(int argc, char** argv) {
         else if (a == "-p") o.performance = true;
         else if (a == "--no-fp16") o.fp16 = false;
         else if (a == "--scene") o.scene = std::stod(next());
+        else if (a == "--dedup") o.dedup = true;
+        else if (a == "--dup-threshold") o.dupThreshold = std::stod(next());
+        else if (a == "--max-hold") o.maxHold = std::stoi(next());
         else if (a == "--max-height") o.maxHeight = std::stoi(next());
         else if (a == "--encoder") o.encoder = next();
         else if (a == "--quality") o.quality = std::stoi(next());
@@ -164,7 +186,7 @@ Options parse(int argc, char** argv) {
         if (o.startSeg < 0 || (o.endSeg >= 0 && o.endSeg <= o.startSeg)) usage(argv[0]);
     }
     if (o.input.empty() || o.output.empty() || o.dll.empty() || (o.outFps.num == 0 && o.multiplier < 2)
-            || o.flow < 0.25F || o.flow > 1.0F)
+            || o.flow < 0.25F || o.flow > 1.0F || o.dupThreshold < 0 || o.maxHold < 1)
         usage(argv[0]);
     return o;
 }
@@ -888,8 +910,21 @@ int run(const Options& o) {
     auto segStartsAt = [&](int64_t n) { return n == firstOut(segOfOut(n) * segN); };
     const int64_t segOutMax{segMode ? firstOut(segN) : 0};   // the most frames a segment has
     const double start{segMode ? double(o.startSeg) * segN / av_q2d(rate) : o.start};
-    if (start > 0)
-        ck(av_seek_frame(in, -1, int64_t(start * AV_TIME_BASE), AVSEEK_FLAG_BACKWARD), "seek");
+    // --dedup in segment mode: a run of held frames can straddle a segment boundary,
+    // and what it looks like depends on where it starts and ends. So a run of
+    // segments reads maxHold + 1 source frames before its first segment (to find
+    // where a run that reaches into it began) and maxHold after its last (to find
+    // where one that leaves it ends) and makes the same output frames a run over the
+    // whole file would; frames outside [outFrom, outTo) are made but not written.
+    // A run longer than maxHold is held up to its last interval, and that interval
+    // lies beyond these margins, so they are enough. Without --dedup: no margins.
+    const int64_t lead{segMode && o.dedup ? o.maxHold + 1 : 0};
+    const int64_t lag{segMode && o.dedup ? o.maxHold : 0};
+    const int64_t winStart{segMode ? std::max<int64_t>(0, int64_t(o.startSeg) * segN - lead) : 0};
+    const int64_t winEnd{segMode && o.endSeg >= 0 ? int64_t(o.endSeg) * segN + lag : -1};
+    const double videoFrom{segMode ? double(winStart) / av_q2d(rate) : start};
+    if (videoFrom > 0)
+        ck(av_seek_frame(in, -1, int64_t(videoFrom * AV_TIME_BASE), AVSEEK_FLAG_BACKWARD), "seek");
 
     // Output size: fit under --max-height, even dimensions.
     int ow{dec->width}, oh{dec->height};
@@ -1054,8 +1089,10 @@ int run(const Options& o) {
     std::unique_ptr<LsfgStage> lsfg;
     Graph ga, gb;
     bool graphsReady{false};
-    int64_t outPts{segMode ? firstOut(int64_t(o.startSeg) * segN) : 0};
-    uint64_t nIn{0}, nOut{0}, nCuts{0};
+    int64_t outPts{segMode ? firstOut(winStart) : 0};
+    const int64_t outFrom{segMode ? firstOut(int64_t(o.startSeg) * segN) : 0};
+    const int64_t outTo{segMode && o.endSeg >= 0 ? firstOut(int64_t(o.endSeg) * segN) : INT64_MAX};
+    uint64_t nIn{0}, nOut{0}, nCuts{0}, nHeld{0};
     const auto t0{std::chrono::steady_clock::now()};
     auto lastReport{t0};
     // Files and streams start their timeline at the start position; segments keep
@@ -1063,6 +1100,8 @@ int run(const Options& o) {
     const int64_t startOut{!segMode && start > 0 ? int64_t(start * AV_TIME_BASE) : 0};
     const double endTime{segMode ? (o.endSeg >= 0 ? double(o.endSeg) * segN / av_q2d(rate) : 1e300)
         : o.duration > 0 ? start + o.duration : 1e300};
+    // Where video frames stop (audio uses endTime): segment mode reads on to winEnd.
+    const double videoTo{segMode ? (winEnd >= 0 ? double(winEnd) / av_q2d(rate) : 1e300) : endTime};
 
     // ---- segment writing: video packets belong to segment segOfOut(pts) and a new
     // segment begins at its forced keyframe; audio waits in a queue and is written
@@ -1161,7 +1200,9 @@ int run(const Options& o) {
     };
     auto emit = [&](FramePtr f) {  // an output-pool RGBA frame, in output order
         TRACE("emit %ld", (long)outPts);
-        f->pts = outPts++;
+        const int64_t n{outPts++};
+        if (n < outFrom || n >= outTo) return;   // a margin frame (see lead / lag)
+        f->pts = n;
         f->duration = 1;
         f->color_range = AVCOL_RANGE_JPEG;
         ck(av_buffersrc_add_frame_flags(gb.src, f.get(), 0), "graph B input");
@@ -1174,23 +1215,33 @@ int run(const Options& o) {
     FramePtr prev;
     int64_t prevIndex{0};
 
-    // The output frames between source frame k (prev) and k + 1 (cur), in order.
-    // Each one is prev itself, cur itself, or generated at its exact position; a
-    // position within 5% of an output frame of a source frame shows that source
-    // frame (an LSFG frame there would look the same, only softer). At a cut
-    // nothing is morphed: the first half shows prev, the rest cur.
-    auto emitInterval = [&](int64_t k, const AVFrame* cur, bool cut) {
-        const int64_t n0{firstOut(k)}, n1{firstOut(k + 1)};
+    // The output frames between source frame k (prev) and k + span (cur), in order.
+    // span is 1 unless --dedup folded a run of held frames into prev: source frames
+    // k .. k + span - 1 all show prev, and the motion to cur is generated across all
+    // of them. Each output frame is prev itself, cur itself, or generated at its
+    // exact position; a position within 5% of an output frame of a source frame
+    // shows that source frame (an LSFG frame there would look the same, only
+    // softer). At a cut nothing is morphed: the first half shows prev, the rest cur.
+    auto emitInterval = [&](int64_t k, int64_t span, const AVFrame* cur, bool cut) {
+        if (span > o.maxHold) {
+            // A long still: hold prev, interpolate only the last source interval.
+            const int64_t kLast{k + span - 1};
+            for (int64_t n = firstOut(k); n < firstOut(kLast); n++) emit(lsfg->copy(prev.get()));
+            k = kLast;
+            span = 1;
+        }
+        const int64_t n0{firstOut(k)}, n1{firstOut(k + span)};
         if (outPts != n0) throw std::runtime_error("internal: output timeline out of step");
+        const int64_t den{span * stepB};
         struct Slot { int kind; float at; };        // kind 0 = prev, 1 = generated, 2 = cur
         std::vector<Slot> slots;
         std::vector<float> at;
         for (int64_t n = n0; n < n1; n++) {
-            const int64_t num{n * stepA - k * stepB};   // position = num / stepB source frames
+            const int64_t num{n * stepA - k * stepB};   // position = num / den source frames
             if (num * 20 < stepA) slots.push_back({0, 0.0F});
-            else if ((stepB - num) * 20 < stepA) slots.push_back({2, 1.0F});
+            else if ((den - num) * 20 < stepA) slots.push_back({2, 1.0F});
             else {
-                const float t{static_cast<float>(num) / static_cast<float>(stepB)};
+                const float t{static_cast<float>(num) / static_cast<float>(den)};
                 slots.push_back({cut ? (t < 0.5F ? 0 : 2) : 1, t});
                 if (!cut) at.push_back(t);
             }
@@ -1202,16 +1253,25 @@ int run(const Options& o) {
         for (; i < slots.size(); i++) emit(lsfg->copy(cur));
         if (cut) nCuts++;
     };
-    // Segment mode with an end: the first frame of segment endSeg is still needed -
-    // it is what the last interval of the segment before interpolates towards - but
-    // it is not output itself, and nothing after it is looked at.
+    // Segment mode with an end: the frame at winEnd (the first frame of segment endSeg
+    // without --dedup) is still needed - it is what the last interval before the
+    // end interpolates towards - but it is not output itself, and nothing after it
+    // is looked at.
     bool boundaryReached{false};
-    auto onSource = [&](FramePtr cur, bool cut) {
+    // With --dedup: prev stands for prevRun source frames (prevIndex .. prevIndex +
+    // prevRun - 1) that all show the same picture; a frame that differs from its
+    // predecessor by less than dupThreshold only extends the run and is dropped
+    // (LSFG never sees it). The interval is emitted when the next distinct frame
+    // arrives, because only then is the run's length known. Segment runs read
+    // margins around their segments for the runs at their ends (see lead / lag).
+    int64_t prevRun{1};
+    double prevDistinctMafd{0};
+    auto onSource = [&](FramePtr cur, bool cut, bool forcedCut, double mafd) {
         if (boundaryReached) return;
         TRACE("source %lu%s", (unsigned long)nIn, cut ? " (cut)" : "");
-        const int64_t srcIndex{int64_t(o.startSeg) * segN + int64_t(nIn)};
+        const int64_t srcIndex{winStart + int64_t(nIn)};
         nIn++;
-        if (segMode && o.endSeg >= 0 && srcIndex >= int64_t(o.endSeg) * segN) {
+        if (winEnd >= 0 && srcIndex >= winEnd) {
             boundaryReached = true;
             if (!prev) return;
         }
@@ -1219,11 +1279,27 @@ int run(const Options& o) {
             lsfg->push(cur.get(), {}, true, [](FramePtr) {});  // lsfg's first iteration has no pair
             prev = std::move(cur);
             prevIndex = srcIndex;
+            prevRun = 1;
+            prevDistinctMafd = mafd;
             return;
         }
-        emitInterval(prevIndex, cur.get(), cut);
+        if (o.dedup) {
+            // scdet's own score compares a frame's difference with the one before it,
+            // which after a held frame is ~0 - every move of an animation on twos
+            // would look like a jump. Compare with the last distinct move instead.
+            cut = forcedCut
+                || (o.scene > 0 && std::min(mafd, std::fabs(mafd - prevDistinctMafd)) >= o.scene);
+            if (!cut && !boundaryReached && mafd < o.dupThreshold) {
+                prevRun++;
+                nHeld++;
+                return;
+            }
+        }
+        emitInterval(prevIndex, prevRun, cur.get(), cut);
         prev = std::move(cur);
         prevIndex = srcIndex;
+        prevRun = 1;
+        prevDistinctMafd = mafd;
 
         const auto now{std::chrono::steady_clock::now()};
         if (now - lastReport > std::chrono::seconds(5)) {
@@ -1239,26 +1315,29 @@ int run(const Options& o) {
     // frame waits until its cut decision is there (the branches need not keep step).
     FramePtr gaOut{allocFrame()};
     std::deque<FramePtr> pendingSource;
-    std::map<int64_t, bool> cutAt;
+    struct Detected { bool cut; double mafd; };   // scdet: its verdict, and the frame difference (percent)
+    std::map<int64_t, Detected> cutAt;
     int64_t forceCutPts{-1};   // --loop: the first frame after the wrap, in graph A's output tb
     auto releaseSources = [&](bool flushing) {
         while (!pendingSource.empty()) {
             const int64_t pts{pendingSource.front()->pts};
             bool cut{false};
+            double mafd{1e9};   // no measurement: a distinct frame
             if (ga.det) {
                 auto it{cutAt.find(pts)};
                 if (it == cutAt.end() && !flushing) return;   // decision not in yet
-                if (it != cutAt.end()) { cut = it->second; cutAt.erase(it); }
+                if (it != cutAt.end()) { cut = o.scene > 0 && it->second.cut; mafd = it->second.mafd; cutAt.erase(it); }
             }
             // The wrap from the last frame back to the first is a cut whatever the
             // detector says: LSFG must not morph the ending into the beginning.
+            bool forced{false};
             if (forceCutPts >= 0 && pts >= forceCutPts) {
-                cut = true;
+                cut = forced = true;
                 forceCutPts = -1;
             }
             FramePtr f{std::move(pendingSource.front())};
             pendingSource.pop_front();
-            onSource(std::move(f), cut);
+            onSource(std::move(f), cut, forced, mafd);
         }
     };
     auto drainA = [&](bool flushing = false) {
@@ -1274,7 +1353,9 @@ int run(const Options& o) {
             const int r{av_buffersink_get_frame(ga.det, gaOut.get())};
             if (r == AVERROR(EAGAIN) || r == AVERROR_EOF) break;
             ck(r, "graph A (scene detection)");
-            cutAt[gaOut->pts] = av_dict_get(gaOut->metadata, "lavfi.scd.time", nullptr, 0) != nullptr;
+            const AVDictionaryEntry* md{av_dict_get(gaOut->metadata, "lavfi.scd.mafd", nullptr, 0)};
+            cutAt[gaOut->pts] = {av_dict_get(gaOut->metadata, "lavfi.scd.time", nullptr, 0) != nullptr,
+                                 md ? std::atof(md->value) : 1e9};
             av_frame_unref(gaOut.get());
         }
         releaseSources(flushing);
@@ -1286,12 +1367,15 @@ int run(const Options& o) {
         // Cut detection runs on a 480-px 8-bit copy: FFmpeg 8.1's scdet_vulkan
         // over-scores 10-bit frames 64x (P010 samples are stored << 6), so ordinary
         // motion became "cuts" and was held instead of interpolated. Cheaper at 4K too.
-        if (o.scene > 0) {
+        // --dedup needs the detector's frame difference too (lavfi.scd.mafd is on every
+        // frame whatever the threshold); with --scene 0 its verdict is ignored.
+        if (o.scene > 0 || o.dedup) {
             std::snprintf(chain, sizeof chain,
                 "%sfps=%d/%d,split=2[m][d];"
                 "[d]libplacebo=w=480:h=-2:format=nv12,scdet_vulkan=threshold=%g[det];"
                 "[m]libplacebo=w=%d:h=%d:format=%s[out]",
-                hw ? "" : "hwupload,", rate.num, rate.den, o.scene, ow, oh, hbd ? "x2bgr10" : "rgba");
+                hw ? "" : "hwupload,", rate.num, rate.den, o.scene > 0 ? o.scene : 100.0, ow, oh,
+                hbd ? "x2bgr10" : "rgba");
         } else {
             std::snprintf(chain, sizeof chain, "%sfps=%d/%d,libplacebo=w=%d:h=%d:format=%s",
                 hw ? "" : "hwupload,", rate.num, rate.den, ow, oh, hbd ? "x2bgr10" : "rgba");
@@ -1321,11 +1405,11 @@ int run(const Options& o) {
     auto onDecoded = [&](AVFrame* f) {
         const int64_t ts{f->best_effort_timestamp};
         const double t{ts == AV_NOPTS_VALUE ? 0.0 : ts * av_q2d(vst->time_base)};
-        if (passes == 0 && t + 0.5 / av_q2d(rate) < start) return;   // before the seek target
+        if (passes == 0 && t + 0.5 / av_q2d(rate) < videoFrom) return;   // before the seek target
         if (boundaryReached) { videoDone = true; return; }
         // Segment mode reads the frame AT the end boundary (see onSource); files
         // and streams stop before it.
-        if (!o.loop && t >= endTime + (segMode ? 0.5 / av_q2d(rate) : 0.0)) { videoDone = true; return; }
+        if (!o.loop && t >= videoTo + (segMode ? 0.5 / av_q2d(rate) : 0.0)) { videoDone = true; return; }
         FramePtr uploaded;
         if (f->format == AV_PIX_FMT_CUDA) {
             // NVDEC's frame into a Vulkan frame, GPU to GPU (CUDA external memory).
@@ -1407,10 +1491,10 @@ int run(const Options& o) {
     if (!graphsReady) throw std::runtime_error("no video frames decoded");
     ck(av_buffersrc_add_frame_flags(ga.src, nullptr, 0), "flush graph A");
     drainA(true);   // frames still waiting for a cut decision go out as non-cuts
-    // The file's last frame is held for a full interval; a segment run that stopped
+    // The file's last frame (a whole run of them with --dedup) is held for its full interval; a segment run that stopped
     // at a boundary has already output everything up to it.
     if (prev && !boundaryReached)
-        for (int64_t n = firstOut(prevIndex); n < firstOut(prevIndex + 1); n++) emit(lsfg->copy(prev.get()));
+        for (int64_t n = firstOut(prevIndex); n < firstOut(prevIndex + prevRun); n++) emit(lsfg->copy(prev.get()));
     prev.reset();
     ck(av_buffersrc_add_frame_flags(gb.src, nullptr, 0), "flush graph B");
     drainB();
@@ -1431,9 +1515,9 @@ int run(const Options& o) {
     lsfg->finish();
 
     const double s{std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count()};
-    std::fprintf(stderr, "vidinterp-gpu: done. in %lu, out %lu, cuts %lu, %.2f s, %.1f in-fps, "
+    std::fprintf(stderr, "vidinterp-gpu: done. in %lu, out %lu, cuts %lu, held %lu, %.2f s, %.1f in-fps, "
         "%.1f out-fps, speed %.2fx%s\n", (unsigned long)nIn, (unsigned long)nOut, (unsigned long)nCuts,
-        s, nIn / s, nOut / s, nIn / s / av_q2d(rate),
+        (unsigned long)nHeld, s, nIn / s, nOut / s, nIn / s / av_q2d(rate),
         segMode ? (", segments " + std::to_string(segmentsWritten)).c_str() : "");
 
     if (segMode) {

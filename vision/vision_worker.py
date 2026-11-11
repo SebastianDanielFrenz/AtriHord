@@ -1054,7 +1054,23 @@ def interp_config() -> dict:
         # NVENC is the limit on this card: one 4K60 x2 stream takes ~55% of it.
         "max_streams": int(cfg.get("interp_max_streams") or 1),
         "max_height": int(cfg.get("interp_max_height") or 2160),
+        # Held frames (animation on twos or threes, a frame-doubled upload) are one
+        # picture: the motion is generated across the whole run instead of between
+        # identical frames (vidinterp-gpu --dedup). A run of more than max_hold source
+        # frames is a deliberate still: held, with only its last interval moving.
+        # dup_threshold = the mean frame difference (percent) below which a frame is
+        # held. Settings interp_dedup (default on), interp_max_hold, interp_dup_threshold.
+        "dedup": cfg.get("interp_dedup", True) not in (False, 0, "0", "false", "off"),
+        "max_hold": max(1, int(cfg.get("interp_max_hold") or 6)),
+        "dup_threshold": float(cfg.get("interp_dup_threshold") or 0.14),
     }
+
+
+def interp_dedup_args(icfg) -> list:
+    """The vidinterp-gpu options for held frames (see interp_config)."""
+    if not icfg["dedup"]:
+        return []
+    return ["--dedup", "--max-hold", str(icfg["max_hold"]), "--dup-threshold", f"{icfg['dup_threshold']:g}"]
 
 
 def interp_streams():
@@ -1223,7 +1239,8 @@ def interp_stream(key):
     STATE["interp_streaming"] += 1
     os.utime(src)                                   # recently used, for eviction
     cmd = [icfg["bin"], "-i", src, "-o", "-", *rate, "-s", f"{start:.3f}",
-           "--max-height", str(max_h), "--maxrate", f"{mbps:g}", "-d", icfg["dll"]]
+           "--max-height", str(max_h), "--maxrate", f"{mbps:g}", "-d", icfg["dll"],
+           *interp_dedup_args(icfg)]
     if loop:
         # Endless: the player loops videos, and a new stream at the end cost a
         # second of black while the encoder started again.
@@ -1403,7 +1420,8 @@ def seg_manage_once():
     os.makedirs(d, exist_ok=True)
     start, end = plan
     cmd = [icfg["bin"], "-i", src, "--segment-dir", d, *rate, "--max-height", str(max_h),
-           "--maxrate", f"{mbps:g}", "-d", icfg["dll"], "--start-segment", str(start)]
+           "--maxrate", f"{mbps:g}", "-d", icfg["dll"], *interp_dedup_args(icfg),
+           "--start-segment", str(start)]
     if end >= 0:
         cmd += ["--end-segment", str(end)]
     log = open(os.path.join(d, "job.log"), "a", encoding="utf-8")
