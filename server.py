@@ -11945,6 +11945,7 @@ def _stereo3d_loop():
         try:
             svc = stereo3d_service()
             svc.step()
+            svc.redo_spool(os.path.join(BASE_DIR, "stereo3d_redo_spool.json"))
             delay = 10 if svc.busy() else 60
         except Exception as exc:
             print(f"[Warning] 3D conversion dispatcher: {exc}", flush=True)

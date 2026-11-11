@@ -789,6 +789,71 @@ class Service:
         return {"status": "requeued", "key": res.get("key"), "old_key": old_key, "lane": lane,
                 "request": res.get("status")}
 
+    def redo_entries(self, items, by="redo"):
+        """Re-make the 3D of files whose finished 3D is to be thrown away (a bug fix in the worker's
+        interpolation, 2026-11-11: held frames were interpolated between identical pictures).
+        Per (root, path): a cache entry for the file's CURRENT version is deleted and the file is
+        queued again - the redo lane (lowest), the favourites lane for a favourite. A queue item
+        in any other state than running/queued is replaced too. Nothing existing: still queued
+        (the caller named the file). -> {"requeued": n, "skipped": n, "none": n}."""
+        out = {"requeued": 0, "skipped": 0, "none": 0}
+        cfg = self.cfg()
+        idx = self.index()
+        for root, path in items:
+            kind = kind_of(path)
+            full = self.resolve_fn(root, path) if kind else None
+            ver = file_version(full) if full else None
+            if kind is None or ver is None or not cfg.get("enabled", True):
+                out["none"] += 1
+                continue
+            _, pid = self._profile(kind, root, path, cfg)
+            key = item_key(ver, pid)
+            with self.queue.lock:
+                st = (self.queue.items.get(key) or {}).get("state")
+            if st in ("submitted", "downloading", "held", "uploading"):
+                out["skipped"] += 1                       # being made right now: it is made with the new code
+                continue
+            if st is not None:
+                self.cancel(key)
+            if idx is not None:
+                with idx.lock:
+                    if idx.get(key) is not None:
+                        self._delete_entry(idx, key)
+                        idx.save()
+            lane = LANE_FAVORITE if self.favourite_fn(root, path) else LANE_REDO
+            res = self.request(root, path, lane, by, save=False)
+            if res.get("status") == "skipped":
+                out["skipped"] += 1
+                continue
+            out["requeued"] += 1
+            self.redo_requeued += 1
+        self.queue.save()
+        if idx is not None:
+            idx.flush()
+        log("redo_entries: %s" % out)
+        return out
+
+    def redo_spool(self, path, batch=20):
+        """Hand-over file for redo_entries without an admin call: a JSON list of [root, path] pairs.
+        Each call takes up to `batch` pairs off the front, redoes them, and writes the rest back
+        (the file is removed when empty). Cheap when the file is absent. -> redo_entries' dict or None."""
+        if not os.path.isfile(path):
+            return None
+        data = _read_json(path, None)
+        if not isinstance(data, list):
+            return None
+        pairs = [(str(x[0]), str(x[1])) for x in data if isinstance(x, (list, tuple)) and len(x) == 2]
+        head, rest = pairs[:batch], pairs[batch:]
+        res = self.redo_entries(head) if head else {"requeued": 0, "skipped": 0, "none": 0}
+        if rest:
+            _atomic_write_json(path, [list(x) for x in rest])
+        else:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        return res
+
     def redo_counts(self):
         """For the trim settings line: items in the redo lane by state, and the total since start."""
         counts = {"queued": 0, "running": 0, "failed": 0}

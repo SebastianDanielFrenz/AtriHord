@@ -265,6 +265,48 @@ check("3D: after an undo the version of the cut is dropped and the restored one 
       res["status"] == "requeued" and stereo3d.item_key(old2, PID) not in svc.queue.items
       and stereo3d.item_key(new2, PID) in svc.queue.items, res)
 
+# ------------------------------------------------------------------ redo_entries / redo_spool
+# 2026-11-11: the worker's interpolation was fixed (held frames); the 3D made before is thrown away
+# and made again, named by (root, path), without a cut.
+write_video("a/stut1.mp4", b"s" * 4000, 1_700_000_000)
+write_video("a/stut2.mp4", b"t" * 4000, 1_700_000_000)
+write_video("a/stut3.mp4", b"w" * 4000, 1_700_000_000)
+vers = {n: stat_version(os.path.join(LIB, "a/%s.mp4" % n)) for n in ("stut1", "stut2", "stut3")}
+k1 = add_3d_entry("a/stut1.mp4", vers["stut1"])
+k2 = add_3d_entry("a/stut2.mp4", vers["stut2"])
+FAVS.add(("downloads", "a/stut2.mp4"))
+res = svc.redo_entries([("downloads", "a/stut1.mp4"), ("downloads", "a/stut2.mp4"),
+                        ("downloads", "a/stut3.mp4"), ("downloads", "a/missing.mp4")])
+it1, it2, it3 = (svc.queue.items.get(stereo3d.item_key(vers[n], PID)) for n in ("stut1", "stut2", "stut3"))
+check("redo_entries: counts", res == {"requeued": 3, "skipped": 0, "none": 1}, res)
+check("redo_entries: the finished entry is gone and its files too",
+      svc.index().get(k1) is None and not os.path.exists(os.path.join(CACHE, stereo3d.cache_rel("video", k1)))
+      and svc.index().get(k2) is None)
+check("redo_entries: lanes - redo, favourite, and a file with no 3D is queued too",
+      it1 and it1["lane"] == "redo" and it2 and it2["lane"] == "favorite" and it3 and it3["lane"] == "redo"
+      and it1["state"] == "queued", (it1, it2, it3))
+res = svc.redo_entries([("downloads", "a/stut1.mp4")])
+check("redo_entries: a second call keeps one queue item", res["requeued"] == 1
+      and sum(1 for i in svc.queue.items.values() if i["path"] == "a/stut1.mp4") == 1, res)
+svc.queue.update(stereo3d.item_key(vers["stut3"], PID), state="submitted")
+res = svc.redo_entries([("downloads", "a/stut3.mp4")])
+check("redo_entries: an item being made right now is left alone", res["skipped"] == 1
+      and svc.queue.items[stereo3d.item_key(vers["stut3"], PID)]["state"] == "submitted", res)
+
+spool = os.path.join(TMP, "redo_spool.json")
+check("redo_spool: no file -> None", svc.redo_spool(spool) is None)
+for n in range(5):
+    write_video("a/sp%d.mp4" % n, b"p" * 3000, 1_700_000_000)
+json.dump([["downloads", "a/sp%d.mp4" % n] for n in range(5)], open(spool, "w"))
+r = svc.redo_spool(spool, batch=2)
+left = json.load(open(spool))
+check("redo_spool: a batch is taken off the front and the rest written back",
+      r["requeued"] == 2 and len(left) == 3 and left[0][1] == "a/sp2.mp4", (r, left))
+svc.redo_spool(spool, batch=2)
+svc.redo_spool(spool, batch=2)
+check("redo_spool: the file is removed when empty", not os.path.exists(spool)
+      and all(any(i["path"] == "a/sp%d.mp4" % n for i in svc.queue.items.values()) for n in range(5)))
+
 # ------------------------------------------------------------------ Smooth motion
 clock = [1000.0]
 busy = [False]

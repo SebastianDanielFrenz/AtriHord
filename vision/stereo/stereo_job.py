@@ -76,6 +76,12 @@ DEFAULT_PROFILE = {
     # proportional below the first, flat above the last).  Anchors = 30/50/80 Mbit/s for 1080p/1440p/2160p eyes.
     "bitrate_anchors": [[1920 * 1080, 30.0], [2560 * 1440, 50.0], [3840 * 2160, 80.0]],
     "interp_quality": 18,
+    # Held frames (animation on twos/threes, a frame-doubled upload) are one picture: the motion is
+    # generated across the whole run (vidinterp-gpu --dedup); a run longer than interp_max_hold source
+    # frames is held with only its last interval moving. 2026-11-11: without it the 120 fps result keeps
+    # the stutter of the source.
+    "interp_dedup": True,
+    "interp_max_hold": 6,
     "depth_cq": 16,
     "depth_maxrate_mbps": 15.0,
     "depth_scale": 0.5,            # depth video size = eye size * this
@@ -412,6 +418,8 @@ def phase_interp(job, prog, src, plan, profile):
             os.remove(f)
     cmd = [VIDINTERP, "-i", src, "-o", part, "--fps", str(int(profile["fps"])), "--encoder", "hevc_nvenc",
            "--quality", str(profile["interp_quality"]), "-d", LSFG_DLL]
+    if profile.get("interp_dedup", True):
+        cmd += ["--dedup", "--max-hold", str(int(profile.get("interp_max_hold", 6)))]
     if plan["stored_max_height"]:
         cmd += ["--max-height", str(plan["stored_max_height"])]
     log("interpolate:", " ".join(cmd))
