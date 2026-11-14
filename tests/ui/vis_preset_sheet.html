@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Preset sheet</title>
+<!-- Contact sheet for picking MilkDrop presets: 12 Butterchurn canvases play 12 presets at once on the test music, so
+     one screenshot shows 12. Served by vis_preset_sheet_server.py (repo root + POST /save).
+       SHEET.names                      every preset of the three butterchurn-presets 2.4.7 packs (sorted)
+       SHEET.show(['name', ...])        up to 12 names into the canvases (numbered 1..12 on screen)
+       SHEET.page(n)                    page n (0-based) of SHEET.names
+       await SHEET.save(['name', ...])  POSTs { name: preset } (JSON, functions dropped) to the server's out file -->
+<style>
+  html, body { margin: 0; background: #000; color: #eee; font: 12px system-ui, sans-serif; }
+  #grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
+  .cell { position: relative; aspect-ratio: 4 / 3; }
+  .cell canvas { width: 100%; height: 100%; display: block; }
+  .cell b { position: absolute; left: 4px; top: 2px; font-size: 18px; text-shadow: 0 0 4px #000, 0 0 4px #000; }
+  #go { position: fixed; inset: 0; font-size: 20px; }
+</style>
+</head>
+<body>
+<button id="go" type="button">Start</button>
+<div id="grid"></div>
+<script src="/web_files/js/modules/visualizer/vendor/butterchurn.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresetsExtra.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresetsExtra2.min.js"></script>
+<script src="vis_test_audio.js"></script>
+<script>
+(() => {
+  const mod = (g) => (g && g.default) || g;
+  const BC = mod(window.butterchurn);
+  const presets = {};
+  for (const g of ['butterchurnPresets', 'butterchurnPresetsExtra', 'butterchurnPresetsExtra2']) {
+    try { Object.assign(presets, mod(window[g]).getPresets()); } catch (e) { console.warn(g, e); }
+  }
+  const names = Object.keys(presets).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const cells = [];
+  let ctx = null;
+  function start() {
+    ctx = new AudioContext();
+    const bus = ctx.createGain();
+    bus.connect(ctx.destination);
+    VisTestAudio.startSynth(ctx, bus);
+    for (let i = 0; i < 12; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const c = document.createElement('canvas');
+      c.width = 320; c.height = 240;
+      const label = document.createElement('b');
+      label.textContent = i + 1;
+      cell.append(c, label);
+      document.getElementById('grid').append(cell);
+      const v = BC.createVisualizer(ctx, c, { width: 320, height: 240, pixelRatio: 1, textureRatio: 1 });
+      v.connectAudio(bus);
+      cells.push({ v, label, name: '' });
+    }
+    const loop = () => { requestAnimationFrame(loop); for (const c of cells) if (c.name) { try { c.v.render(); } catch (e) { /* a broken preset */ } } };
+    requestAnimationFrame(loop);
+  }
+  document.getElementById('go').addEventListener('click', (e) => { e.target.remove(); start(); });
+  window.SHEET = {
+    names,
+    show(list) {
+      cells.forEach((c, i) => {
+        c.name = list[i] || '';
+        if (c.name && presets[c.name]) { try { c.v.loadPreset(presets[c.name], 0); } catch (e) { c.name = ''; } }
+      });
+      return list.slice(0, 12).map((n, i) => (i + 1) + ' ' + n).join('\n');
+    },
+    page(n) { return this.show(names.slice(n * 12, n * 12 + 12)); },
+    async save(list) {
+      const out = {};
+      for (const n of list) if (presets[n]) out[n] = JSON.parse(JSON.stringify(presets[n]));
+      const r = await fetch('/save', { method: 'POST', body: JSON.stringify(out) });
+      return r.status + ' ' + Object.keys(out).length + ' presets';
+    },
+  };
+})();
+</script>
+</body>
+</html>

@@ -148,12 +148,13 @@
     const cur = curated.slice();
     for (let i = cur.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cur[i], cur[j]] = [cur[j], cur[i]]; }
     if (cfg.collection === 'curated') return cur;
-    // mixed: our scenes in order, a curated preset between each two; by genre: of those, the ones of the family
+    // mixed: the presets in random order with our scenes spread evenly between them, starting with one of ours;
+    // by genre: the same, of the scenes that suit the song's genre group
     const mine = cfg.collection === 'genre' ? VisGenres.pool(fam, own, 1) : own;
     if (cfg.collection === 'genre') cur.splice(0, cur.length, ...VisGenres.pool(fam, cur));
-    const out = [];
-    const n = Math.max(mine.length, cur.length);
-    for (let i = 0; i < n; i++) { if (mine.length) out.push(mine[i % mine.length]); if (cur[i]) out.push(cur[i]); }
+    const out = cur.slice();
+    const step = (cur.length + mine.length) / Math.max(1, mine.length);
+    mine.forEach((n, j) => out.splice(Math.round(j * step), 0, n));
     return out;
   }
   // calm music changes scene after twice as many phrases

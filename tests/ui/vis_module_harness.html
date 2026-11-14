@@ -16,7 +16,9 @@
   const load = (src) => new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error(src)); document.head.append(s); });
   let ctx, bus, ready;
   const songs = [{ title: 'Test groove', artist: 'Synth', cover: null, genre: 'Electro House' }, { title: 'Second song', artist: 'Synth', cover: null, genre: 'Ambient' },
-    { title: 'Third song', artist: 'Synth', cover: null, genre: 'Dubstep' }, { title: 'No style yet', artist: 'Synth', cover: null, genre: null }];
+    { title: 'Third song', artist: 'Synth', cover: null, genre: 'Dubstep' }, { title: 'No style yet', artist: 'Synth', cover: null, genre: null },
+    { title: 'Psy', artist: 'Synth', cover: null, genre: 'Psy-Trance' }, { title: 'Retro', artist: 'Synth', cover: null, genre: 'Synthwave' },
+    { title: 'Film', artist: 'Synth', cover: null, genre: 'Stage & Screen---Soundtrack' }, { title: 'Metal', artist: 'Synth', cover: null, genre: 'Heavy Metal' }];
   let cur = 0;
   window.HARNESS = {
     nextSong() { cur = (cur + 1) % songs.length; if (window.AtriVisualizer && AtriVisualizer.isOpen) AtriVisualizer.songChanged(); },

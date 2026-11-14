@@ -1,9 +1,9 @@
 {
  "format": 1,
- "generated": "2026-11-14T11:23:07Z",
+ "generated": "2026-11-14T11:48:37Z",
  "modules": {
   "visualizer": {
-   "description": "Full-screen music visualizer for the music page: the AtriHord scene set and curated MilkDrop presets (Butterchurn), chosen by the genre of the track.",
+   "description": "Full-screen music visualizer for the music page: the AtriHord scene set and 134 curated MilkDrop presets (Butterchurn), chosen by the genre of the track (16 genre groups).",
    "files": [
     "module.json",
     "module.js",
@@ -13,6 +13,7 @@
     "conductor.js",
     "strands.js",
     "presets-curated.js",
+    "presets-genres.js",
     "genres.js",
     "visualizer.js"
    ],
@@ -22,28 +23,30 @@
    "sha256": {
     "conductor.js": "d739282900f14d223bd29d71f6dbc16f0f9d356363c9f0fceb1535dd8b610a2f",
     "design.js": "64c19dfdd1e939a5c1148c7bf5a24d903f758b8d888de628e468b39c1c020265",
-    "genres.js": "b8c744286c9598c79c68386668c87a2a07db92bb43a81566653a5b11e621c27e",
-    "module.js": "c96db077e309bfa1029db4c3f726983a8895b89556686b7a098e350885795a3c",
-    "module.json": "4fef9090cb9fbb3eceb3d323a166d374f29c601a1c870252f738b1f749ee84e6",
+    "genres.js": "9e95a83d4426fb09688bbc90fbfe8e45c5f8a5b8466dfd0345d5e0d86ebf79b3",
+    "module.js": "d96c184e51c44fecba013e6c83c8cef58e5bf8b5602c9892a70c968b4a8093d9",
+    "module.json": "b68a36f74c60fd92721cd8f1adf8c71d77fcbdfddc4db685e7626091d2cd656b",
     "presets-curated.js": "12b985ea3d49c8f192fdd29b834410e51561a8c994774c93022257bba89067bd",
+    "presets-genres.js": "018fd060f030868a497f38f4d868df28ea2a48ec7eaad7a936390ab8563470a0",
     "scenes.js": "600217530dd8a12b6a7b483f0b98cd1d42f3e6ef0479dd012d1c28ebdfe10f5e",
     "strands.js": "1117960af3e920138cfa9e119505a1498b6d7ab752e11b642082abe8e9452ddc",
     "vendor/butterchurn.min.js": "4e67421bc18d48fac4a6ff4e69e2778f770737fbdd4e323438da154085b4818d",
-    "visualizer.js": "6082e4a18ad145e4e9dd0c89d3e3b73426ce68123402cc6504025a67cf30c3ad"
+    "visualizer.js": "85751bc3fe52b4e9de806705006b236869dee7955a382cb64c34de578216228e"
    },
    "sizes": {
     "conductor.js": 3774,
     "design.js": 5793,
-    "genres.js": 4873,
-    "module.js": 1322,
-    "module.json": 490,
+    "genres.js": 12390,
+    "module.js": 1397,
+    "module.json": 537,
     "presets-curated.js": 81944,
+    "presets-genres.js": 880644,
     "scenes.js": 20071,
     "strands.js": 29258,
     "vendor/butterchurn.min.js": 192520,
-    "visualizer.js": 17102
+    "visualizer.js": 17160
    },
-   "version": "1.1.0"
+   "version": "1.2.0"
   }
  }
 }

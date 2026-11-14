@@ -6,7 +6,7 @@ window.AtriModules = window.AtriModules || {};
 window.AtriModules.visualizer = {
   id: 'visualizer',
   name: 'Visualizer',
-  version: '1.1.0',
+  version: '1.2.0',
   description: 'Full-screen music visualizer: the AtriHord scene set and curated MilkDrop presets (Butterchurn), chosen by genre.',
   files: [
     'vendor/butterchurn.min.js',   // MilkDrop in WebGL 2, MIT (THIRD_PARTY.md)
@@ -15,6 +15,7 @@ window.AtriModules.visualizer = {
     'conductor.js',                // when scenes change
     'strands.js',                  // audio features and cover palette (and the P0 strand renderer)
     'presets-curated.js',          // the picked MilkDrop presets
+    'presets-genres.js',           // more presets, picked per genre group
     'genres.js',                   // which scenes suit which genre
     'visualizer.js',               // the full-screen view
   ],
