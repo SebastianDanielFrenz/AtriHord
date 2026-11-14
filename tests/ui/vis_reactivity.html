@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Preset reactivity</title>
+<!-- Does a preset react to the music? Four renderers side by side: the original and our edit (preset-tweaks.js), each
+     once with the test music and once in silence. Every frame a 32x24 copy is taken: mean brightness, its spread over
+     time (std) and the mean change between frames (motion). A preset that ignores the music has the same numbers in
+     both columns.  Served by vis_preset_sheet_server.py; after Start:  await REACT.measure('martin - crystal alley', 8) -->
+<style>
+  html, body { margin: 0; background: #000; color: #eee; font: 12px system-ui, sans-serif; }
+  #grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; }
+  .cell { position: relative; aspect-ratio: 4 / 3; }
+  .cell canvas { width: 100%; height: 100%; display: block; }
+  .cell b { position: absolute; left: 4px; top: 2px; text-shadow: 0 0 4px #000; }
+  #go { position: fixed; inset: 0; font-size: 20px; }
+</style>
+</head>
+<body>
+<button id="go" type="button">Start</button>
+<div id="grid"></div>
+<script src="/web_files/js/modules/visualizer/vendor/butterchurn.min.js"></script>
+<script src="/web_files/js/modules/visualizer/presets-curated.js"></script>
+<script src="/web_files/js/modules/visualizer/presets-genres.js"></script>
+<script src="/web_files/js/modules/visualizer/preset-tweaks.js"></script>
+<script src="vis_test_audio.js"></script>
+<script>
+(() => {
+  const BC = (window.butterchurn && window.butterchurn.default) || window.butterchurn;
+  const cells = [];
+  const small = document.createElement('canvas');
+  small.width = 32; small.height = 24;
+  const sctx = small.getContext('2d', { willReadFrequently: true });
+  function start() {
+    const ctx = new AudioContext();
+    const music = ctx.createGain();
+    music.connect(ctx.destination);
+    VisTestAudio.startSynth(ctx, music);
+    const silence = ctx.createGain();       // nothing plays into it
+    for (const [label, src, edited] of [['original · music', music, false], ['original · silence', silence, false],
+      ['edited · music', music, true], ['edited · silence', silence, true]]) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const c = document.createElement('canvas');
+      c.width = 400; c.height = 300;
+      const b = document.createElement('b');
+      b.textContent = label;
+      cell.append(c, b);
+      document.getElementById('grid').append(cell);
+      const v = BC.createVisualizer(ctx, c, { width: 400, height: 300, pixelRatio: 1, textureRatio: 1 });
+      v.connectAudio(src);
+      cells.push({ v, c, label, edited, samples: [] });
+    }
+  }
+  document.getElementById('go').addEventListener('click', (e) => { e.target.remove(); start(); });
+
+  function stats(samples) {
+    const lum = samples.map((s) => s.reduce((a, x) => a + x, 0) / s.length);
+    const mean = lum.reduce((a, x) => a + x, 0) / lum.length;
+    const std = Math.sqrt(lum.reduce((a, x) => a + (x - mean) ** 2, 0) / lum.length);
+    let motion = 0;
+    for (let i = 1; i < samples.length; i++) {
+      let d = 0;
+      for (let k = 0; k < samples[i].length; k++) d += Math.abs(samples[i][k] - samples[i - 1][k]);
+      motion += d / samples[i].length;
+    }
+    motion /= Math.max(1, samples.length - 1);
+    return { mean: +mean.toFixed(1), std: +std.toFixed(2), motion: +motion.toFixed(2) };
+  }
+  window.REACT = {
+    measure(name, seconds) {
+      const orig = (window.VisTweaks && VisTweaks.originals[name]) || VisCurated[name];
+      for (const cell of cells) { cell.v.loadPreset(cell.edited ? VisCurated[name] : orig, 0); cell.samples = []; }
+      return new Promise((done) => {
+        const t0 = performance.now();
+        const loop = () => {
+          for (const cell of cells) {
+            cell.v.render();
+            if (performance.now() - t0 > 1500) {       // the first 1.5 s are the preset building up
+              sctx.drawImage(cell.c, 0, 0, 32, 24);
+              const px = sctx.getImageData(0, 0, 32, 24).data;
+              const lum = [];
+              for (let i = 0; i < px.length; i += 4) lum.push(0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2]);
+              cell.samples.push(lum);
+            }
+          }
+          if (performance.now() - t0 < (seconds || 8) * 1000) requestAnimationFrame(loop);
+          else done(Object.fromEntries(cells.map((c) => [c.label, stats(c.samples)])));
+        };
+        requestAnimationFrame(loop);
+      });
+    },
+  };
+})();
+</script>
+</body>
+</html>
