@@ -37,7 +37,13 @@
       next(why) { if (started) go(st.i + 1, why === 'drop' ? 0.6 : 2.5, why || 'trigger'); },
       setMode(m) { st.mode = m; },
       setPhrases(n) { st.phrases = Math.max(1, n | 0); },
-      setScenes(list) { st.scenes = list.slice(); },
+      // a new list; the scene on screen stays when the new list has it (returns true), else the next change starts it
+      setScenes(list) {
+        const cur = st.scenes[st.i];
+        st.scenes = list.slice();
+        st.i = st.scenes.indexOf(cur);
+        return st.i >= 0;
+      },
       state() { return { scene: st.scenes[st.i], beats: st.beats, phrase: Math.floor(st.beats / PHRASE), mode: st.mode, last: st.last, quiet: +st.quiet.toFixed(1) }; },
       update(now, f) {
         if (!started || !f) return;

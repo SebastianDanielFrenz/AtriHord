@@ -15,7 +15,8 @@
   const DIR = '/web_files/js/modules/visualizer/';
   const load = (src) => new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error(src)); document.head.append(s); });
   let ctx, bus, ready;
-  const songs = [{ title: 'Test groove', artist: 'Synth', cover: null }, { title: 'Second song', artist: 'Synth', cover: null }];
+  const songs = [{ title: 'Test groove', artist: 'Synth', cover: null, genre: 'Electro House' }, { title: 'Second song', artist: 'Synth', cover: null, genre: 'Ambient' },
+    { title: 'Third song', artist: 'Synth', cover: null, genre: 'Dubstep' }, { title: 'No style yet', artist: 'Synth', cover: null, genre: null }];
   let cur = 0;
   window.HARNESS = {
     nextSong() { cur = (cur + 1) % songs.length; if (window.AtriVisualizer && AtriVisualizer.isOpen) AtriVisualizer.songChanged(); },
@@ -29,9 +30,9 @@
       VisTestAudio.startSynth(ctx, bus);
       const tap = ctx.createGain();
       bus.connect(tap);
-      await load(DIR + 'module.js');
+      await load(DIR + 'module.js?t=' + Date.now());
       const m = AtriModules.visualizer;
-      for (const f of m.files) await load(DIR + f + '?v=' + m.version);
+      for (const f of m.files) await load(DIR + f + '?v=' + m.version + '.' + Date.now());   // never a cached copy while testing
       ready = { ctx, input: tap, nowPlaying: () => songs[cur], onClose: () => { document.title = 'closed'; } };
     }
     window[AtriModules.visualizer.entry].open(ready);

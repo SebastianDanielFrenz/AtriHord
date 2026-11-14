@@ -1,6 +1,6 @@
 // The full-screen visualizer view of the music page (module "visualizer", see module.js).
 //   AtriVisualizer.open(host)   host = { ctx: AudioContext, input: AudioNode (the stereo bus tap),
-//                                        nowPlaying(): { title, artist, cover } | null, onClose?() }
+//                                        nowPlaying(): { title, artist, cover, genre } | null, onClose?() }
 //   AtriVisualizer.songChanged()   the page calls it when another song starts (caption, colour scheme)
 //   AtriVisualizer.close()
 // Butterchurn renders; the conductor (conductor.js) plays the scenes one after another and changes them on phrases,
@@ -8,15 +8,21 @@
 (function () {
   'use strict';
   const KEY = 'atriVisualizer';
-  const DEFAULTS = { collection: 'mixed', changes: 'auto', phrases: 2, scheme: 'auto', delay: 0, quality: 1 };
+  const DEFAULTS = { collection: 'genre', changes: 'auto', phrases: 2, scheme: 'auto', delay: 0, quality: 1, v: 2 };
   let cfg = Object.assign({}, DEFAULTS);
-  try { Object.assign(cfg, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* private window */ }
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    // v2 (1.1.0): "By genre" is new and the default; settings saved before it held the old default "mixed"
+    if (saved.v !== 2 && saved.collection === 'mixed') saved.collection = 'genre';
+    Object.assign(cfg, saved, { v: 2 });
+  } catch (e) { /* private window */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) { /* private window */ } };
 
   let host = null, root = null, canvas = null, vis = null, delay = null, feat = null, conductor = null;
   let raf = 0, open = false, lastT = 0, idleTimer = 0, coverScheme = 'spectrum', songKey = '';
   const presets = {};          // name -> preset object (our scenes are rebuilt when the scheme changes)
   let own = [], curated = [];
+  let fam = null, famStyle = '';  // the song's genre family (genres.js) and its style
   const perf = { acc: 0, n: 0, low: 0 };
 
   const CSS = `
@@ -72,7 +78,7 @@
   <button type="button" data-a="close" title="Close (Esc)" aria-label="Close">${svg(ICON.close)}</button>
 </div>
 <div class="avis-panel" hidden>
-  <label>Scenes <select data-k="collection">${opt('mixed', 'AtriHord + curated', cfg.collection)}${opt('atrihord', 'AtriHord only', cfg.collection)}${opt('curated', 'Curated only', cfg.collection)}</select></label>
+  <label>Scenes <select data-k="collection">${opt('genre', 'By genre', cfg.collection)}${opt('mixed', 'AtriHord + curated', cfg.collection)}${opt('atrihord', 'AtriHord only', cfg.collection)}${opt('curated', 'Curated only', cfg.collection)}</select></label>
   <label>Changes <select data-k="changes">${opt('auto', 'On phrases and drops', cfg.changes)}${opt('drops', 'On drops only', cfg.changes)}${opt('manual', 'Only by hand (A)', cfg.changes)}</select></label>
   <label>Phrases <input type="range" data-k="phrases" min="1" max="8" step="1" value="${cfg.phrases}"></label>
   <label>Colours <select data-k="scheme">${opt('auto', 'From the cover', cfg.scheme)}${schemes.map((s) => opt(s, s[0].toUpperCase() + s.slice(1), cfg.scheme)).join('')}</select></label>
@@ -104,14 +110,15 @@
 
   function info() {
     const el = root.querySelector('.avis-info');
-    if (el) el.textContent = 'Delay ' + cfg.delay + ' ms · ' + (cfg.scheme === 'auto' ? 'colours from the cover: ' + coverScheme : 'colours: ' + cfg.scheme);
+    if (el) el.textContent = (cfg.collection === 'genre' ? 'Genre: ' + (fam ? famStyle + ' → ' + VisGenres.FAMILIES[fam].label : 'unknown → all scenes') + ' · ' : '') +
+      'Delay ' + cfg.delay + ' ms · ' + (cfg.scheme === 'auto' ? 'colours from the cover: ' + coverScheme : 'colours: ' + cfg.scheme);
   }
   function apply(k) {
     if (k === 'delay' && delay) delay.delayTime.setTargetAtTime(cfg.delay / 1000, delay.context.currentTime, 0.05);
     if (k === 'quality') size();
     if (k === 'changes' && conductor) conductor.setMode(cfg.changes);
-    if (k === 'phrases' && conductor) conductor.setPhrases(cfg.phrases);
-    if (k === 'collection' && conductor) { conductor.setScenes(sceneList()); conductor.start(0); }
+    if (k === 'phrases' && conductor) conductor.setPhrases(phrases());
+    if (k === 'collection' && conductor) { conductor.setPhrases(phrases()); conductor.setScenes(sceneList()); conductor.start(0); }
     if (k === 'scheme') useScheme(cfg.scheme === 'auto' ? coverScheme : cfg.scheme);
     info();
   }
@@ -141,19 +148,36 @@
     const cur = curated.slice();
     for (let i = cur.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cur[i], cur[j]] = [cur[j], cur[i]]; }
     if (cfg.collection === 'curated') return cur;
-    // mixed: our scenes in order, a curated preset between each two
+    // mixed: our scenes in order, a curated preset between each two; by genre: of those, the ones of the family
+    const mine = cfg.collection === 'genre' ? VisGenres.pool(fam, own, 1) : own;
+    if (cfg.collection === 'genre') cur.splice(0, cur.length, ...VisGenres.pool(fam, cur));
     const out = [];
-    const n = Math.max(own.length, cur.length);
-    for (let i = 0; i < n; i++) { if (own.length) out.push(own[i % own.length]); if (cur[i]) out.push(cur[i]); }
+    const n = Math.max(mine.length, cur.length);
+    for (let i = 0; i < n; i++) { if (mine.length) out.push(mine[i % mine.length]); if (cur[i]) out.push(cur[i]); }
     return out;
+  }
+  // calm music changes scene after twice as many phrases
+  const phrases = () => cfg.phrases * (cfg.collection === 'genre' && fam && VisGenres.FAMILIES[fam].slow ? 2 : 1);
+  // the song's family changed: play that family's scenes (the one on screen stays if it suits)
+  function useFamily(style) {
+    const f = VisGenres.family(style);
+    famStyle = style ? String(style).split('---').pop() : '';
+    if (f === fam) return;
+    fam = f;
+    if (!conductor || cfg.collection !== 'genre') return;
+    conductor.setPhrases(phrases());
+    if (conductor.setScenes(sceneList())) { if (current) label(current); } else if (conductor.active) conductor.next('genre');
   }
   let current = '', sceneTimer = 0;
   function load(name, blend) {
     if (!vis || !presets[name]) return;
     current = name;
     try { vis.loadPreset(presets[name], blend); } catch (e) { console.warn('visualizer preset', name, e); }
+    label(name);
+  }
+  function label(name) {
     const el = $('.avis-scene');
-    el.textContent = name.replace(/^AtriHord - /, '');
+    el.textContent = name.replace(/^AtriHord - /, '') + (cfg.collection === 'genre' && fam ? ' · ' + VisGenres.FAMILIES[fam].label : '');
     el.classList.add('show');
     clearTimeout(sceneTimer);
     sceneTimer = setTimeout(() => el.classList.remove('show'), 2500);
@@ -176,6 +200,7 @@
     const key = np ? (np.cover || '') + '|' + np.title : '';
     if (key === songKey) return;
     songKey = key;
+    useFamily(np && np.genre);
     if (!np || !np.cover) { img.hidden = true; img.removeAttribute('src'); coverScheme = 'spectrum'; if (cfg.scheme === 'auto') useScheme('spectrum'); info(); return; }
     img.hidden = false;
     img.src = np.cover;
@@ -227,7 +252,7 @@
       feat = MusicVisualizer.audioFeatures(an);
       VisDesign.use(cfg.scheme === 'auto' ? 'spectrum' : cfg.scheme);
       buildOwn();
-      conductor = VisConductor.create({ scenes: sceneList(), mode: cfg.changes, phrases: cfg.phrases, load });
+      conductor = VisConductor.create({ scenes: sceneList(), mode: cfg.changes, phrases: phrases(), load });
     }
     try { host.input.connect(delay); } catch (e) { /* already */ }
     root.hidden = false;

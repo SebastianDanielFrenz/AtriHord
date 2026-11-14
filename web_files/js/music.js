@@ -1434,7 +1434,7 @@
       input: VIS.tap,
       nowPlaying: () => {
         const s = current();
-        return s ? { title: s.title, artist: s.artist, cover: s.cover ? coverUrl(s, 300) : null } : null;
+        return s ? { title: s.title, artist: s.artist, cover: s.cover ? coverUrl(s, 300) : null, genre: s.genre || null } : null;
       },
     });
   }

@@ -1,8 +1,8 @@
 {
   "id": "visualizer",
   "name": "Visualizer",
-  "version": "1.0.0",
-  "description": "Full-screen music visualizer for the music page: the AtriHord scene set and curated MilkDrop presets (Butterchurn).",
+  "version": "1.1.0",
+  "description": "Full-screen music visualizer for the music page: the AtriHord scene set and curated MilkDrop presets (Butterchurn), chosen by the genre of the track.",
   "install_default": true,
   "files": [
     "module.json",
@@ -13,6 +13,7 @@
     "conductor.js",
     "strands.js",
     "presets-curated.js",
+    "genres.js",
     "visualizer.js"
   ]
 }
