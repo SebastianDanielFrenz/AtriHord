@@ -39,6 +39,17 @@
       const cells = (p.shapes || [])[0];
       if (cells) cells.frame_eqs_str += 'a.rad*=.8+.35*Math.min(2,a.bass);';
     },
+    // overreactive: the dot count was 4^(bass+mid+treb) of the instant level (dozens to 1024 from frame to frame) and
+    // two shapes took a new random transparency from the level every frame (a strobe). Now the smoothed level, a
+    // gentler dot count and a faint steady transparency that follows the level.
+    'suksma - water cooled red uranium vs dotes - freeenergynow.net': (p) => {
+      p.frame_eqs_str = must(p.frame_eqs_str, 'a.vol3=.3*(a.bass+a.mid+a.treb);', 'a.vol3=.3*(a.bass_att+a.mid_att+a.treb_att);');
+      const sh = p.shapes || [];
+      sh[0].frame_eqs_str = must(sh[0].frame_eqs_str, 'pow(4,a.bass+a.treb+a.mid)', 'pow(3,.75*(a.bass_att+a.treb_att+a.mid_att))');
+      for (const s of sh.slice(1, 3)) s.frame_eqs_str = must(s.frame_eqs_str, 'div(Math.floor(randint(Math.floor(a.q30))),5)', 'div(a.q30,40)');
+      // the camera and colour drift ran at a speed proportional to loudness: half as fast now
+      p.frame_eqs_str = must(p.frame_eqs_str, 'a.vol=.03*(', 'a.vol=.015*(');
+    },
     // looked the same with and without music: dim at rest, brightens and flashes with the bass, lights pulse with the
     // mids, and the camera sways a little on the beat
     'martin - crystal alley': (p) => {
