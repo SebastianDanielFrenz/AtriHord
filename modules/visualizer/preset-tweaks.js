@@ -18,6 +18,11 @@
       p.comp = must(p.comp, 'vec3(0.7, 0.5, 0.1)', 'vec3(0.16, 0.38, 1.0)');
       p.comp = must(p.comp, 'vec3(0.7, 0.5, 1.0)', 'vec3(1.0, 0.32, 0.78)');
     },
+    // orange and blue -> violet-magenta with cyan highlights (the colour ramp at the end of its comp shader)
+    'fishbrain + flexi - stitchcraft': (p) => {
+      p.comp = must(p.comp, 'vec3(4.0, 2.8, 0.0)', 'vec3(3.2, 0.4, 3.6)');
+      p.comp = must(p.comp, 'vec3(-0.3, 0.2, 0.6)', 'vec3(-0.2, 0.55, 0.6)');
+    },
     // looked the same with and without music: dim at rest, brightens and flashes with the bass, lights pulse with the
     // mids, and the camera sways a little on the beat
     'martin - crystal alley': (p) => {
