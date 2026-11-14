@@ -130,7 +130,6 @@
         "martin - infinity (2010 update)",
         "martin - stormy sea (2010 update)",
         "martin + stahlregen - martin in da mash 14",
-        "Aderrasi - Songflower (Moss Posy)",
         "cope - soar (v2.0)"] },
     cinematic: { label: "Cinematic", slow: true,   // soundtrack, score, classical, choral
       scenes: [

@@ -1,9 +1,9 @@
 {
  "format": 1,
- "generated": "2026-11-14T13:10:34Z",
+ "generated": "2026-11-14T13:11:35Z",
  "modules": {
   "visualizer": {
-   "description": "Full-screen music visualizer for the music page: the AtriHord scene set and 130 curated MilkDrop presets (Butterchurn), chosen by the genre of the track (16 genre groups).",
+   "description": "Full-screen music visualizer for the music page: the AtriHord scene set and 129 curated MilkDrop presets (Butterchurn), chosen by the genre of the track (16 genre groups).",
    "files": [
     "module.json",
     "module.js",
@@ -24,12 +24,12 @@
    "sha256": {
     "conductor.js": "8975c916e1d5bee562f61c84e2a6c4db040ddeaa52ddd2f7f37192178c7bd67d",
     "design.js": "64c19dfdd1e939a5c1148c7bf5a24d903f758b8d888de628e468b39c1c020265",
-    "genres.js": "b706ad42b5c716f5ec263a4000b0e283de5f04363ee49216fc9b162e5fd3717a",
-    "module.js": "077815c29bec73ad7040b2c8ff8d863ea7fa874d6d0387f90a0eaa6675f0161e",
-    "module.json": "976578e199a4618e1e5a38b804da5a319488cdde998ca7c60eaa02dd3364cd7d",
+    "genres.js": "f9dd04f88d94f9681304bbda610c70a4d29b71080615e99321ee1c1da237355c",
+    "module.js": "56ae7bc6eb758e8a15e40064ab9b17eff8ba9dd25e379355d84b76038aa115f2",
+    "module.json": "1ef377201db7c153e96b4ab9c8a7bc852bf4c98f97ef7c6dd60ba350f29c14c0",
     "preset-tweaks.js": "41cba6efece646d80c32827ef133dc8c5201f2a70f3f3e75436386f99c67ea65",
     "presets-curated.js": "673278816744091da1f094526e8e223d4e644cea8375fe921318c17243588f79",
-    "presets-genres.js": "28e9d140c1bf720b58920b3d848f22f66520ad034cc6f6e3fd446f1a411372f9",
+    "presets-genres.js": "f9f4d69541a07bf01c78f80f2349d8abf94be25e05101d606c76dd09186c2806",
     "scenes.js": "600217530dd8a12b6a7b483f0b98cd1d42f3e6ef0479dd012d1c28ebdfe10f5e",
     "strands.js": "1117960af3e920138cfa9e119505a1498b6d7ab752e11b642082abe8e9452ddc",
     "vendor/butterchurn.min.js": "4e67421bc18d48fac4a6ff4e69e2778f770737fbdd4e323438da154085b4818d",
@@ -38,18 +38,18 @@
    "sizes": {
     "conductor.js": 3804,
     "design.js": 5793,
-    "genres.js": 12237,
+    "genres.js": 12192,
     "module.js": 1470,
     "module.json": 561,
     "preset-tweaks.js": 3581,
     "presets-curated.js": 62122,
-    "presets-genres.js": 870444,
+    "presets-genres.js": 866812,
     "scenes.js": 20071,
     "strands.js": 29258,
     "vendor/butterchurn.min.js": 192520,
     "visualizer.js": 18844
    },
-   "version": "1.3.3"
+   "version": "1.3.4"
   }
  }
 }
