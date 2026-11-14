@@ -63,3 +63,5 @@ unless it says so; models and the Lossless Scaling DLL are never part of this re
 | lsfg-vk (built by `install.sh`, patched) | MIT | smooth-motion backend; needs the Lossless Scaling DLL |
 | three.js | MIT | VR / 3D viewer (vendored) |
 | Leaflet | BSD-2-Clause | map (vendored) |
+| Butterchurn 2.6.7 | MIT | music visualizer module (vendored in `web_files/js/modules/visualizer/vendor/`) |
+| butterchurn-presets 2.4.7 (14 picked MilkDrop presets) | MIT (collection); presets by the MilkDrop authors named in each title | music visualizer module, `presets-curated.js` |

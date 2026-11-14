@@ -1,0 +1,244 @@
+<!doctype html>
+<!-- P0 prototype of the music page's line visualizer (MUSIC_VISUALIZER_PLAN.md).
+     Serve the repo root:  py tests/ui/vr_preview_server.py 8781   ->  http://127.0.0.1:8781/tests/ui/vis_preview.html
+     Keys: H panel, F fullscreen, Space play/pause the source, S new seed. window.VIS is the visualizer (for scripts). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visualizer preview</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 13px/1.35 system-ui, sans-serif; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; display: grid; place-items: center; }
+  #stage { position: relative; background: #000; }
+  #stage.free { width: 100vw; height: 100vh; }
+  #vis { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #panel { position: fixed; top: 10px; left: 10px; width: 270px; max-height: calc(100vh - 20px); overflow: auto;
+    background: rgba(18, 18, 22, 0.82); backdrop-filter: blur(10px); border: 1px solid #333; border-radius: 10px; padding: 10px 12px; z-index: 2; }
+  #panel.off { display: none; }
+  #panel h1 { font-size: 14px; margin: 0 0 8px; }
+  .row { display: grid; grid-template-columns: 92px 1fr 40px; gap: 6px; align-items: center; margin: 3px 0; }
+  .row span:last-child { text-align: right; font-variant-numeric: tabular-nums; color: #999; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  button, select { background: #2a2a31; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 4px 8px; font: inherit; }
+  button[aria-pressed="true"] { background: #4b3fa0; border-color: #7a6ee0; }
+  #meters { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; height: 40px; align-items: end; margin: 8px 0 2px; }
+  #meters div { background: #6c63ff; min-height: 1px; border-radius: 2px 2px 0 0; }
+  #mlabels { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; font-size: 10px; color: #888; text-align: center; }
+  #stats { color: #9a9; font-variant-numeric: tabular-nums; margin-top: 6px; }
+  #pal { display: flex; gap: 4px; margin: 6px 0; }
+  #pal i { flex: 1; height: 14px; border-radius: 3px; }
+  #err { color: #f77; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage" class="free"><canvas id="vis"></canvas></div></div>
+<div id="panel">
+  <h1>Visualizer P0</h1>
+  <div class="row"><label for="src">Source</label>
+    <select id="src"><option value="sim">Simulated (no audio)</option><option value="synth">Test music</option><option value="file">Audio file…</option></select><span></span></div>
+  <input type="file" id="file" accept="audio/*" hidden>
+  <div class="row"><label for="aspect">Aspect</label>
+    <select id="aspect"><option value="free">Window</option><option value="1.7778">16:9</option><option value="2.3333">21:9</option><option value="1.3333">4:3</option><option value="0.5625">9:16</option></select><span></span></div>
+  <div class="row"><label for="palsel">Palette</label>
+    <select id="palsel"><option value="apple">Apple</option><option value="ocean">Ocean</option><option value="ember">Ember</option><option value="mono">Mono</option><option value="image">From image…</option></select><span></span></div>
+  <input type="file" id="img" accept="image/*" hidden>
+  <div id="pal"></div>
+  <div id="sliders"></div>
+  <div class="btns">
+    <button type="button" id="play">Play / pause</button>
+    <button type="button" id="seed">New seed</button>
+    <button type="button" id="fs">Fullscreen</button>
+  </div>
+  <div id="meters"><div></div><div></div><div></div><div></div><div></div><div></div></div>
+  <div id="mlabels"><span>bass</span><span>low</span><span>mid</span><span>high</span><span>level</span><span>beat</span></div>
+  <div id="stats"></div>
+  <div id="err"></div>
+</div>
+<script src="/web_files/js/modules/visualizer/strands.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const MV = window.MusicVisualizer;
+  let vis;
+  try { vis = MV.create($('vis')); } catch (e) { $('err').textContent = String(e.message || e); return; }
+  window.VIS = vis;
+
+  // ---- sources ------------------------------------------------------------------------------------------------
+  let ctx = null, analyser = null, master = null, synth = null, fileEl = null, mode = 'sim', last = null;
+  const sim = MV.simulatedFeatures(124);
+  function audio() {
+    if (ctx) return;
+    ctx = new AudioContext();
+    master = ctx.createGain();
+    master.gain.value = 0.8;
+    master.connect(ctx.destination);
+    analyser = ctx.createAnalyser();
+    master.connect(analyser);
+    window.FEAT = MV.audioFeatures(analyser);
+    // start from what the browser says its output latency is; the slider fine-tunes it by ear
+    setParam('delay', Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * 1000));
+  }
+  function useFeatures(fn) { vis.setFeatures((now, dt) => (last = fn(now, dt))); }
+  useFeatures(sim);
+
+  // A small 124 bpm groove: kick, offbeat hats, a bass line, a pad; 2 bars of breakdown every 8 bars.
+  function startSynth() {
+    audio();
+    ctx.resume();
+    const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const nd = noise.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const bpm = 124, beat = 60 / bpm;
+    const bassNotes = [41.2, 41.2, 49, 55, 36.7, 36.7, 49, 46.2];
+    const chords = [[220, 261.6, 329.6], [196, 246.9, 293.7], [174.6, 220, 261.6], [196, 246.9, 329.6]];
+    let next = ctx.currentTime + 0.1, step = 0;
+    const pad = ctx.createBiquadFilter();
+    pad.type = 'lowpass'; pad.frequency.value = 900; pad.connect(master);
+    function sched() {
+      while (next < ctx.currentTime + 0.2) {
+        const t = next, bar = Math.floor(step / 8), breakdown = bar % 8 >= 6, eighth = step % 8;
+        if (!breakdown && eighth % 2 === 0) {                    // kick
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.13);
+          g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+          o.connect(g).connect(master); o.start(t); o.stop(t + 0.4);
+        }
+        if (eighth % 2 === 1) {                                  // hat
+          const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+          s.buffer = noise; f.type = 'highpass'; f.frequency.value = 7000;
+          g.gain.setValueAtTime(breakdown ? 0.05 : 0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+          s.connect(f).connect(g).connect(master); s.start(t, Math.random() * 0.5); s.stop(t + 0.08);
+        }
+        if (!breakdown) {                                        // bass
+          const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+          o.type = 'sawtooth'; o.frequency.value = bassNotes[eighth] * 2;
+          f.type = 'lowpass'; f.frequency.value = 500;
+          g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.001, t + beat * 0.45);
+          o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + beat * 0.5);
+        }
+        if (eighth === 0) {                                      // pad, one chord per bar
+          for (const hz of chords[bar % 4]) for (const det of [-6, 6]) {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'triangle'; o.frequency.value = hz; o.detune.value = det;
+            g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + 0.4); g.gain.exponentialRampToValueAtTime(0.0001, t + beat * 4);
+            o.connect(g).connect(pad); o.start(t); o.stop(t + beat * 4 + 0.05);
+          }
+        }
+        next += beat / 2; step++;
+      }
+    }
+    sched();
+    return { timer: setInterval(sched, 25), stop() { clearInterval(this.timer); } };
+  }
+  function setSource(v) {
+    if (synth) { synth.stop(); synth = null; }
+    if (fileEl) fileEl.pause();
+    mode = v;
+    if (v === 'sim') useFeatures(sim);
+    else if (v === 'synth') { synth = startSynth(); useFeatures(window.FEAT); }
+    else if (v === 'file') $('file').click();
+  }
+  $('src').addEventListener('change', (e) => setSource(e.target.value));
+  $('file').addEventListener('change', () => {
+    const f = $('file').files[0];
+    if (!f) return;
+    audio();
+    ctx.resume();
+    if (!fileEl) {
+      fileEl = new Audio();
+      fileEl.loop = true;
+      ctx.createMediaElementSource(fileEl).connect(master);
+    }
+    fileEl.src = URL.createObjectURL(f);
+    fileEl.play();
+    useFeatures(window.FEAT);
+  });
+  $('play').addEventListener('click', () => {
+    if (mode === 'synth') { if (synth) { synth.stop(); synth = null; } else synth = startSynth(); }
+    else if (mode === 'file' && fileEl) { if (fileEl.paused) fileEl.play(); else fileEl.pause(); }
+  });
+
+  // ---- aspect -------------------------------------------------------------------------------------------------
+  function layout() {
+    const v = $('aspect').value, st = $('stage');
+    if (v === 'free') { st.className = 'free'; st.style.width = st.style.height = ''; return; }
+    const r = +v, W = innerWidth, H = innerHeight;
+    const w = Math.min(W, H * r), h = w / r;
+    st.className = '';
+    st.style.width = Math.floor(w) + 'px'; st.style.height = Math.floor(h) + 'px';
+  }
+  $('aspect').addEventListener('change', layout);
+  addEventListener('resize', layout);
+
+  // ---- palettes -----------------------------------------------------------------------------------------------
+  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  const PALS = {
+    apple: MV.DEFAULT_PALETTE,
+    ocean: ['#00c8ff', '#2f6bff', '#00ffc8', '#7a5cff', '#00a0ff'].map(hex),
+    ember: ['#ff5a1f', '#ff2d55', '#ffb000', '#ff7a00', '#d62f7a'].map(hex),
+    mono: ['#cfd8ff', '#9fb0ff', '#ffffff', '#b8c4ff', '#e6ebff'].map(hex),
+  };
+  function showPal(p) {
+    $('pal').replaceChildren(...p.map((c) => { const i = document.createElement('i'); i.style.background = `rgb(${c.map((v) => Math.round(v * 255)).join(',')})`; return i; }));
+  }
+  function setPal(p) { vis.setPalette(p); showPal(p); }
+  $('palsel').addEventListener('change', (e) => { if (e.target.value === 'image') $('img').click(); else setPal(PALS[e.target.value]); });
+  $('img').addEventListener('change', () => {
+    const f = $('img').files[0];
+    if (!f) return;
+    const im = new Image();
+    im.onload = () => setPal(MV.paletteFromImage(im));
+    im.src = URL.createObjectURL(f);
+  });
+  showPal(PALS.apple);
+
+  // ---- sliders ------------------------------------------------------------------------------------------------
+  const SL = [
+    ['bundles', 1, 14, 1], ['strands', 4, 120, 1], ['points', 40, 400, 10], ['width', 0.3, 4, 0.05],
+    ['amp', 0, 0.4, 0.005], ['spread', 0, 0.3, 0.005], ['spanY', 0, 1, 0.01], ['bright', 0.005, 0.3, 0.005],
+    ['bloom', 0, 3, 0.05], ['exposure', 0.2, 5, 0.05], ['trail', 0, 0.95, 0.01], ['speed', 0, 3, 0.05],
+    ['beatKick', 0, 3, 0.05], ['bgTint', 0, 0.3, 0.005], ['renderScale', 0.25, 1, 0.05], ['delay', 0, 3000, 10],
+  ];
+  const setters = {};
+  function setParam(k, v) { vis.params[k] = v; if (setters[k]) setters[k](v); }
+  for (const [k, lo, hi, st] of SL) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<label for="p_${k}">${k}</label><input type="range" id="p_${k}" min="${lo}" max="${hi}" step="${st}" value="${vis.params[k]}"><span></span>`;
+    const inp = row.querySelector('input'), out = row.querySelector('span');
+    const show = () => { out.textContent = (+inp.value).toFixed(st < 1 ? (st < 0.01 ? 3 : 2) : 0); };
+    inp.addEventListener('input', () => { vis.params[k] = +inp.value; show(); });
+    setters[k] = (v) => { inp.value = v; show(); };
+    show();
+    $('sliders').appendChild(row);
+  }
+
+  // ---- keys, buttons, meters ----------------------------------------------------------------------------------
+  let seedN = 1;
+  const newSeed = () => vis.setSeed(seedN = (seedN * 1103515245 + 12345) >>> 0);
+  $('seed').addEventListener('click', newSeed);
+  const fs = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+  $('fs').addEventListener('click', fs);
+  addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === 'h' || e.key === 'H') $('panel').classList.toggle('off');
+    else if (e.key === 'f' || e.key === 'F') fs();
+    else if (e.key === 's' || e.key === 'S') newSeed();
+    else if (e.key === ' ') { e.preventDefault(); $('play').click(); }
+  });
+  const bars = [...$('meters').children];
+  setInterval(() => {
+    last = vis.shownFeatures();                 // the meters show what the picture uses: delayed like it
+    if (last) ['bass', 'lowmid', 'mid', 'high', 'level', 'beat'].forEach((k, i) => { bars[i].style.height = Math.round(100 * Math.min(1, last[k] || 0)) + '%'; });
+    const s = vis.stats();
+    $('stats').textContent = `${s.fps} fps · ${s.ms} ms · ${s.size} @ ${s.scale} · ${s.strands} strands${s.float ? '' : ' · 8-bit'}`;
+  }, 100);
+  document.addEventListener('visibilitychange', () => (document.hidden ? vis.stop() : vis.start()));
+  layout();
+  vis.start();
+})();
+</script>
+</body>
+</html>

@@ -51,3 +51,5 @@ stage/
 
 # --- agent scratch folder (copies of prod files, probes)
 scratchpad/
+# --- installed optional modules (source: modules/; installed by module_manager.py / install.sh / Settings)
+web_files/js/modules/

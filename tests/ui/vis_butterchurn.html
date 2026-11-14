@@ -1,0 +1,271 @@
+<!doctype html>
+<!-- Trial of Butterchurn (MilkDrop in WebGL, MIT) as the music page's visualizer engine (MUSIC_VISUALIZER_PLAN.md, rev. 2).
+     Serve the repo root:  py tests/ui/vr_preview_server.py 8781  ->  http://127.0.0.1:8781/tests/ui/vis_butterchurn.html
+     Butterchurn and the preset packs come from jsDelivr (pinned versions); the music page would carry its own copy.
+     Keys: H panel, F fullscreen, A next scene of the AtriHord set, N next preset, P previous, R random, S (un)favourite, Space play/pause the source.
+     With "only these" ticked, next / previous / random / auto-change stay within the favourites. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Butterchurn trial</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 13px/1.35 system-ui, sans-serif; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; display: grid; place-items: center; }
+  #stage { position: relative; background: #000; }
+  #stage.free { width: 100vw; height: 100vh; }
+  #vis { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #panel { position: fixed; top: 10px; left: 10px; width: 300px; max-height: calc(100vh - 20px); overflow: auto;
+    background: rgba(18, 18, 22, 0.84); backdrop-filter: blur(10px); border: 1px solid #333; border-radius: 10px; padding: 10px 12px; z-index: 2; }
+  #panel.off { display: none; }
+  #panel h1 { font-size: 14px; margin: 0 0 8px; }
+  .row { display: grid; grid-template-columns: 80px 1fr 44px; gap: 6px; align-items: center; margin: 4px 0; }
+  .row > span:last-child { text-align: right; color: #999; font-variant-numeric: tabular-nums; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  button, select, input[type=search] { background: #2a2a31; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 4px 8px; font: inherit; }
+  input[type=search] { width: 100%; box-sizing: border-box; }
+  #list { width: 100%; height: 180px; margin-top: 6px; }
+  #name { color: #cfc; margin: 6px 0; word-break: break-word; }
+  #stats, #note { color: #999; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  #start { position: fixed; inset: 0; display: grid; place-items: center; z-index: 3; background: rgba(0,0,0,0.6); }
+  #start button { font-size: 18px; padding: 12px 22px; }
+  #err { color: #f77; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage" class="free"><canvas id="vis"></canvas></div></div>
+<div id="start"><button type="button" id="go">Start (test music)</button></div>
+<div id="panel">
+  <h1>Butterchurn trial</h1>
+  <div class="row"><label for="src">Source</label>
+    <select id="src"><option value="synth">Test music</option><option value="file">Audio file…</option></select><span></span></div>
+  <input type="file" id="file" accept="audio/*" hidden>
+  <div class="row"><label for="aspect">Aspect</label>
+    <select id="aspect"><option value="free">Window</option><option value="1.7778">16:9</option><option value="2.3333">21:9</option><option value="1.3333">4:3</option><option value="0.5625">9:16</option></select><span></span></div>
+  <div class="row"><label for="delay">Delay</label><input type="range" id="delay" min="0" max="3000" step="10" value="0"><span id="delayV">0</span></div>
+  <div class="row"><label for="blend">Blend s</label><input type="range" id="blend" min="0" max="10" step="0.5" value="2.5"><span id="blendV">2.5</span></div>
+  <div class="row"><label for="cycle">Auto every</label><input type="range" id="cycle" min="0" max="120" step="5" value="30"><span id="cycleV">30 s</span></div>
+  <div class="row"><label for="favOnly">Favourites</label><label><input type="checkbox" id="favOnly" checked> only these</label><span id="favN"></span></div>
+  <div class="row"><label for="scheme">Scheme</label><select id="scheme"></select><span></span></div>
+  <div class="row"><label for="setMode">Set changes</label>
+    <select id="setMode"><option value="auto">phrase + drop</option><option value="drops">drops only</option><option value="manual">manual (A)</option></select><span></span></div>
+  <div class="row"><label for="phrases">Phrases</label><input type="range" id="phrases" min="1" max="8" step="1" value="2"><span id="phrasesV">2</span></div>
+  <div class="row"><label for="quality">Quality</label>
+    <select id="quality"><option value="1">full</option><option value="0.75">0.75</option><option value="0.5">0.5</option></select><span></span></div>
+  <div class="btns">
+    <button type="button" id="prev">◀ Prev</button><button type="button" id="next">Next ▶</button>
+    <button type="button" id="rand">Random</button><button type="button" id="star">☆ Favourite</button><button type="button" id="own">AtriHord set</button><button type="button" id="scene">Next scene (A)</button><button type="button" id="play">Play / pause</button><button type="button" id="fs">Fullscreen</button>
+  </div>
+  <div id="name"></div>
+  <input type="search" id="q" placeholder="Filter presets…">
+  <select id="list" size="10"></select>
+  <div id="stats"></div>
+  <div id="note"></div>
+  <div id="err"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/butterchurn@2.6.7/lib/butterchurn.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresetsExtra.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresetsExtra2.min.js"></script>
+<script src="vis_test_audio.js"></script>
+<script src="/web_files/js/modules/visualizer/design.js"></script>
+<script src="/web_files/js/modules/visualizer/scenes.js"></script>
+<script src="/web_files/js/modules/visualizer/conductor.js"></script>
+<script src="/web_files/js/modules/visualizer/strands.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const err = (m) => { $('err').textContent += m + '\n'; };
+  const mod = (g) => (g && g.default) || g;
+  const BC = mod(window.butterchurn);
+  if (!BC || !BC.createVisualizer) { err('butterchurn did not load'); return; }
+  // all three packs, de-duplicated by name
+  const presets = {};
+  for (const g of ['butterchurnPresets', 'butterchurnPresetsExtra', 'butterchurnPresetsExtra2']) {
+    const m = mod(window[g]);
+    try { Object.assign(presets, m.getPresets()); } catch (e) { err(g + ': ' + e.message); }
+  }
+  // our own presets (vis/preset-*.js), built in the current design scheme
+  const OWN = {};
+  const buildOwn = () => {
+    try { for (const s of VisPresets.set(VisDesign)) { presets[s.name] = s.preset; OWN[s.name] = true; } } catch (e) { err('AtriHord set: ' + e.message); }
+  };
+  buildOwn();
+  const SET = Object.keys(OWN);
+  const names = Object.keys(presets).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  $('note').textContent = names.length + ' presets';
+
+  // Favourites: the owner's picks (2026-11-12) to start with; ★ adds or removes the current one. Kept in this browser
+  // only (localStorage) - the curated list for the music page is decided from it later.
+  // Each round of picks bumps PICKS_VER: a browser that already has a list gets the new picks merged in once (its own
+  // removals of older picks stay removed).
+  const PICKS_VER = 3;
+  const PICKS = [
+    // round 1
+    '_Mig_004_version2', '_Mig_028', '_Mig_079', '_Rovastar + Geiss - Hurricane Nightmare (Posterize Mix)',
+    '$$$ Royal - Mashup (197)', '$$$ Royal - Mashup (220)', '$$$ Royal - Mashup (253)',
+    // round 2 ("11" and "158" were list positions)
+    '$$$ Royal - Mashup (273)', '_Krash + Eo.S. - Photographic Sentinel', 'Flexi + Martin - cascading decay swing',
+    'A Tribute to Martin - bombyx mori - Ft Flexi - AdamFX - StahlRegen - Krash - Rovastar -  Hd in Milk T',
+    'Adam Eatit Mashup FX 2 martin - disco mix + Lodus + Geiss + Ludicrous speed + Aderrasi 2_1',
+    'Cope - Passage (mandala mix)', 'cope - the drain to heaven',
+    // round 3: our own
+    'AtriHord - Ring Tunnel',
+  ];
+  const ROUND = { 1: PICKS.slice(0, 7), 2: PICKS.slice(7, 14), 3: PICKS.slice(14) };
+  let favs, ver = 0;
+  try { favs = JSON.parse(localStorage.getItem('bcFavs') || 'null'); ver = +(localStorage.getItem('bcPicksVer') || 0); } catch (e) { favs = null; }
+  if (!Array.isArray(favs)) { favs = []; ver = 0; }
+  for (let r = ver + 1; r <= PICKS_VER; r++) for (const n of ROUND[r] || []) if (!favs.includes(n)) favs.push(n);
+  favs = favs.filter((n) => n in presets);
+  try { localStorage.setItem('bcPicksVer', String(PICKS_VER)); } catch (e) { /* private window */ }
+  const saveFavs = () => { try { localStorage.setItem('bcFavs', JSON.stringify(favs)); } catch (e) { /* private window */ } };
+  saveFavs();
+  const pool = () => { const f = names.map((n, i) => i).filter((i) => favs.includes(names[i])); return $('favOnly').checked && f.length ? f : names.map((n, i) => i); };
+  const pickRandom = () => { const p = pool().filter((i) => i !== cur); return p.length ? p[Math.floor(Math.random() * p.length)] : cur; };
+  const step = (d) => { const p = pool(); const k = p.indexOf(cur); return p[((k < 0 ? 0 : k + d) % p.length + p.length) % p.length]; };
+  window.FAVS = favs;
+
+  let feat = null, conductor = null;
+  let ctx, vis, analysisIn, delayNode, master, synth = null, fileEl = null, mode = 'synth', cur = -1;
+  const canvas = $('vis');
+
+  function size() {
+    const dpr = Math.min(devicePixelRatio || 1, 2) * +$('quality').value;
+    const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; if (vis) vis.setRendererSize(w, h); }
+  }
+  new ResizeObserver(size).observe(canvas);
+
+  function init() {
+    ctx = new AudioContext();
+    master = ctx.createGain();
+    master.connect(ctx.destination);
+    // the visualizer listens through a delay of its own: the picture meets the sound as late as the speakers play it
+    delayNode = ctx.createDelay(5);
+    master.connect(delayNode);
+    analysisIn = delayNode;
+    size();
+    vis = BC.createVisualizer(ctx, canvas, { width: canvas.width, height: canvas.height, pixelRatio: 1, textureRatio: 1 });
+    vis.connectAudio(analysisIn);
+    window.BCV = vis;
+    // the set's conductor hears the same (delayed) signal as the picture
+    const an = ctx.createAnalyser();
+    analysisIn.connect(an);
+    feat = MusicVisualizer.audioFeatures(an);
+    conductor = VisConductor.create({ scenes: SET, mode: $('setMode').value, phrases: +$('phrases').value,
+      load: (n, b) => load(names.indexOf(n), b, true) });
+    window.CONDUCTOR = conductor;
+    load(pickRandom(), 0);
+    let lastT = 0, frames = 0, acc = 0;
+    const loop = (t) => {
+      requestAnimationFrame(loop);
+      try { vis.render(); } catch (e) { err('render: ' + e.message); }
+      const dt = lastT ? (t - lastT) / 1000 : 0.016;
+      if (feat && conductor.active) conductor.update(t / 1000, feat(t / 1000, dt));
+      if (lastT) { acc += t - lastT; frames++; if (acc > 1000) {
+        let s = Math.round(frames * 1000 / acc) + ' fps · ' + canvas.width + 'x' + canvas.height;
+        if (conductor.active) { const c = conductor.state(); s += ' · set: phrase ' + c.phrase + ', beat ' + c.beats + ', last change: ' + c.last; }
+        $('stats').textContent = s; frames = 0; acc = 0; } }
+      lastT = t;
+      const every = +$('cycle').value;
+      if (!conductor.active && every && performance.now() - loadedAt > every * 1000) load(pickRandom());
+    };
+    requestAnimationFrame(loop);
+  }
+
+  let loadedAt = 0;
+  function load(i, blend, fromSet) {
+    if (!fromSet && conductor) conductor.stop();   // picking a preset by hand leaves the set
+    i = ((i % names.length) + names.length) % names.length;
+    cur = i;
+    loadedAt = performance.now();
+    try { vis.loadPreset(presets[names[i]], blend == null ? +$('blend').value : blend); } catch (e) { err('preset "' + names[i] + '": ' + e.message); }
+    $('name').textContent = (fromSet ? '▶ set · ' : '') + (favs.includes(names[i]) ? '★ ' : '') + (i + 1) + ' / ' + names.length + ' — ' + names[i];
+    $('star').textContent = favs.includes(names[i]) ? '★ Unfavourite' : '☆ Favourite';
+    $('favN').textContent = favs.length;
+    const opt = [...$('list').options].find((o) => +o.value === i);
+    if (opt) opt.selected = true;
+  }
+  function fillList() {
+    const q = $('q').value.toLowerCase();
+    $('list').replaceChildren(...names.map((n, i) => [n, i]).filter(([n]) => !q || n.toLowerCase().includes(q))
+      .map(([n, i]) => { const o = document.createElement('option'); o.value = i; o.textContent = (favs.includes(n) ? '★ ' : '') + n; return o; }));
+  }
+  fillList();
+  $('q').addEventListener('input', fillList);
+  $('list').addEventListener('change', (e) => load(+e.target.value));
+
+  function startSource(v) {
+    if (synth) { synth.stop(); synth = null; }
+    if (fileEl) fileEl.pause();
+    mode = v;
+    if (v === 'synth') synth = VisTestAudio.startSynth(ctx, master);
+    else $('file').click();
+  }
+  $('go').addEventListener('click', () => { $('start').remove(); if (!ctx) init(); ctx.resume(); startSource('synth'); });
+  $('src').addEventListener('change', (e) => { if (ctx) startSource(e.target.value); });
+  $('file').addEventListener('change', () => {
+    const f = $('file').files[0];
+    if (!f || !ctx) return;
+    if (!fileEl) { fileEl = new Audio(); fileEl.loop = true; ctx.createMediaElementSource(fileEl).connect(master); }
+    fileEl.src = URL.createObjectURL(f);
+    fileEl.play();
+  });
+  $('play').addEventListener('click', () => {
+    if (mode === 'synth') { if (synth) { synth.stop(); synth = null; } else synth = VisTestAudio.startSynth(ctx, master); }
+    else if (fileEl) { if (fileEl.paused) fileEl.play(); else fileEl.pause(); }
+  });
+  $('delay').addEventListener('input', (e) => { $('delayV').textContent = e.target.value; if (delayNode) delayNode.delayTime.value = +e.target.value / 1000; });
+  $('blend').addEventListener('input', (e) => { $('blendV').textContent = e.target.value; });
+  $('cycle').addEventListener('input', (e) => { $('cycleV').textContent = +e.target.value ? e.target.value + ' s' : 'off'; });
+  $('quality').addEventListener('change', size);
+  $('prev').addEventListener('click', () => load(step(-1)));
+  $('next').addEventListener('click', () => load(step(1)));
+  $('rand').addEventListener('click', () => load(pickRandom()));
+  $('star').addEventListener('click', () => {
+    const n = names[cur];
+    if (n == null) return;
+    const k = favs.indexOf(n);
+    if (k >= 0) favs.splice(k, 1); else favs.push(n);
+    saveFavs(); fillList(); load(cur, 0);
+  });
+  $('favOnly').addEventListener('change', () => { $('favN').textContent = favs.length; });
+  // design scheme: rebuild our presets in it; the current one blends over when it is ours
+  $('scheme').replaceChildren(...Object.keys(VisDesign.schemes).map((k) => { const o = document.createElement('option'); o.value = o.textContent = k; return o; }));
+  $('scheme').addEventListener('change', (e) => { VisDesign.use(e.target.value); buildOwn(); if (names[cur] in OWN) load(cur, 1.5, conductor && conductor.active); });
+  $('own').addEventListener('click', () => { if (conductor) conductor.start(Math.max(0, SET.indexOf(names[cur]))); });
+  $('scene').addEventListener('click', () => { if (!conductor) return; if (conductor.active) conductor.next('trigger'); else conductor.start(0); });
+  $('setMode').addEventListener('change', (e) => { if (conductor) conductor.setMode(e.target.value); });
+  $('phrases').addEventListener('input', (e) => { $('phrasesV').textContent = e.target.value; if (conductor) conductor.setPhrases(+e.target.value); });
+  window.VIS_LOAD = (n, b) => load(names.indexOf(n), b);
+
+  function layout() {
+    const v = $('aspect').value, st = $('stage');
+    if (v === 'free') { st.className = 'free'; st.style.width = st.style.height = ''; return; }
+    const r = +v, w = Math.min(innerWidth, innerHeight * r);
+    st.className = '';
+    st.style.width = Math.floor(w) + 'px'; st.style.height = Math.floor(w / r) + 'px';
+  }
+  $('aspect').addEventListener('change', layout);
+  addEventListener('resize', layout);
+  const fs = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+  $('fs').addEventListener('click', fs);
+  addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    const k = e.key.toLowerCase();
+    if (k === 'h') $('panel').classList.toggle('off');
+    else if (k === 'f') fs();
+    else if (k === 'n') load(step(1));
+    else if (k === 'p') load(step(-1));
+    else if (k === 'r') load(pickRandom());
+    else if (k === 's') $('star').click();
+    else if (k === 'a') $('scene').click();
+    else if (k === ' ') { e.preventDefault(); $('play').click(); }
+  });
+  layout();
+})();
+</script>
+</body>
+</html>

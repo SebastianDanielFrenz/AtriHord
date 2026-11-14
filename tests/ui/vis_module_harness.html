@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- Harness for the optional visualizer module (web_files/js/modules/visualizer/) without the music page's server:
+     loads module.js and its files the way music.js does, plays the test music into a stand-in "stereo bus" and opens
+     the view.  py tests/ui/vr_preview_server.py 8781  ->  http://127.0.0.1:8781/tests/ui/vis_module_harness.html
+     window.HARNESS.musicJsParses() checks music.js for syntax errors (it is compiled, not run). -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Visualizer module harness</title>
+<style>body{background:#111;color:#ddd;font:14px system-ui;display:grid;place-items:center;height:100vh;margin:0}button{font-size:18px;padding:10px 18px}</style>
+</head>
+<body>
+<button type="button" id="go">Open visualizer (test music)</button>
+<script src="vis_test_audio.js"></script>
+<script>
+(() => {
+  const DIR = '/web_files/js/modules/visualizer/';
+  const load = (src) => new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error(src)); document.head.append(s); });
+  let ctx, bus, ready;
+  const songs = [{ title: 'Test groove', artist: 'Synth', cover: null }, { title: 'Second song', artist: 'Synth', cover: null }];
+  let cur = 0;
+  window.HARNESS = {
+    nextSong() { cur = (cur + 1) % songs.length; if (window.AtriVisualizer && AtriVisualizer.isOpen) AtriVisualizer.songChanged(); },
+    async musicJsParses() { const t = await (await fetch('/web_files/js/music.js', { cache: 'no-store' })).text(); try { new Function(t); return 'ok'; } catch (e) { return 'SyntaxError: ' + e.message; } },
+  };
+  document.getElementById('go').addEventListener('click', async () => {
+    if (!ctx) {
+      ctx = new AudioContext();
+      bus = ctx.createGain();           // the stereo bus (UP.input) stand-in
+      bus.connect(ctx.destination);
+      VisTestAudio.startSynth(ctx, bus);
+      const tap = ctx.createGain();
+      bus.connect(tap);
+      await load(DIR + 'module.js');
+      const m = AtriModules.visualizer;
+      for (const f of m.files) await load(DIR + f + '?v=' + m.version);
+      ready = { ctx, input: tap, nowPlaying: () => songs[cur], onClose: () => { document.title = 'closed'; } };
+    }
+    window[AtriModules.visualizer.entry].open(ready);
+  });
+})();
+</script>
+</body>
+</html>
