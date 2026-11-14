@@ -34,7 +34,6 @@
         "AtriHord - Pulse Field",
         "$$$ Royal - Mashup (220)",
         "$$$ Royal - Mashup (253)",
-        "Flexi - wild at range",
         "Flexi - mindblob mix",
         "shifter - dark tides bdrv mix",
         "Flexi - alien fish pond"] },

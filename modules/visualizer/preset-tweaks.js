@@ -23,6 +23,22 @@
       p.comp = must(p.comp, 'vec3(4.0, 2.8, 0.0)', 'vec3(3.2, 0.4, 3.6)');
       p.comp = must(p.comp, 'vec3(-0.3, 0.2, 0.6)', 'vec3(-0.2, 0.55, 0.6)');
     },
+    // steel blue and brown -> violet-magenta on deep navy, with cyan-white highlights
+    'Flexi - mindblob mix': (p) => {
+      p.comp = must(p.comp, 'vec3(0.3, 0.5, 0.7)', 'vec3(0.78, 0.26, 0.9)');
+      p.comp = must(p.comp, 'vec3(0.2, 0.1, 0.0)', 'vec3(0.0, 0.07, 0.24)');
+      p.comp = must(p.comp, 'texture (sampler_main, uv).zzz', '(texture (sampler_main, uv).zzz * vec3(0.75, 1.0, 1.0))');
+    },
+    // a particle pond that never read the audio: the bass kicks the particles (its "shock"), the pond breathes with
+    // the bass and the brightness pulses with the beat
+    'Flexi - alien fish pond': (p) => {
+      p.frame_eqs_str = must(p.frame_eqs_str, 'a.shock=.002;', 'a.shock=.002+.02*Math.max(0,a.bass-.8);');
+      p.frame_eqs_str += 'a.zoom=1+.025*(a.bass_att-1);a.rot=.01*(a.treb_att-1);';
+      p.comp = tail(p.comp, '  ret *= 0.5 + 0.3 * clamp(bass_att, 0.0, 1.6) + 0.4 * clamp(bass, 0.0, 2.0);');
+      // the cells are drawn by the first shape: they swell on the kick
+      const cells = (p.shapes || [])[0];
+      if (cells) cells.frame_eqs_str += 'a.rad*=.8+.35*Math.min(2,a.bass);';
+    },
     // looked the same with and without music: dim at rest, brightens and flashes with the bass, lights pulse with the
     // mids, and the camera sways a little on the beat
     'martin - crystal alley': (p) => {
