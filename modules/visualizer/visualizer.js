@@ -174,14 +174,17 @@
   // calm music changes scene after twice as many phrases
   const phrases = () => cfg.phrases * (cfg.collection === 'genre' && fam && VisGenres.FAMILIES[fam].slow ? 2 : 1);
   // the song's family changed: play that family's scenes (the one on screen stays if it suits)
+  // returns true when it already changed the scene
   function useFamily(style) {
     const f = VisGenres.family(style);
     famStyle = style ? String(style).split('---').pop() : '';
-    if (f === fam) return;
+    if (f === fam) return false;
     fam = f;
-    if (!conductor || cfg.collection !== 'genre') return;
+    if (!conductor || cfg.collection !== 'genre') return false;
     conductor.setPhrases(phrases());
-    if (conductor.setScenes(sceneList())) { if (current) label(current); } else if (conductor.active) conductor.next('genre');
+    if (conductor.setScenes(sceneList())) { if (current) label(current); return false; }
+    if (conductor.active) { conductor.next('genre'); return true; }
+    return false;
   }
   let current = '', sceneTimer = 0;
   function load(name, blend) {
@@ -223,8 +226,11 @@
     $('.avis-cap span').textContent = np ? np.artist || '' : '';
     const key = np ? (np.cover || '') + '|' + np.title : '';
     if (key === songKey) return;
+    const another = songKey !== '';      // '' = the view just opened: the conductor starts the first scene itself
     songKey = key;
-    useFamily(np && np.genre);
+    // every new song gets a new scene (owner, 2026-11-14), unless changes are set to "only by hand"
+    const changed = useFamily(np && np.genre);
+    if (another && !changed && conductor && conductor.active && cfg.changes !== 'manual') conductor.next('song');
     caption();
     info();
     if (!np || !np.cover) { img.hidden = true; img.removeAttribute('src'); coverScheme = 'spectrum'; if (cfg.scheme === 'auto') useScheme('spectrum'); info(); return; }
