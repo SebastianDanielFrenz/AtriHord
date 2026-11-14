@@ -44,7 +44,7 @@
         st.i = st.scenes.indexOf(cur);
         return st.i >= 0;
       },
-      state() { return { scene: st.scenes[st.i], beats: st.beats, phrase: Math.floor(st.beats / PHRASE), mode: st.mode, last: st.last, quiet: +st.quiet.toFixed(1) }; },
+      state() { return { scene: st.scenes[st.i], i: st.i, n: st.scenes.length, beats: st.beats, phrase: Math.floor(st.beats / PHRASE), mode: st.mode, last: st.last, quiet: +st.quiet.toFixed(1) }; },
       update(now, f) {
         if (!started || !f) return;
         const dt = Math.min(0.1, Math.max(0, now - (api._t || now)));

@@ -1,6 +1,6 @@
 {
  "format": 1,
- "generated": "2026-11-14T12:28:18Z",
+ "generated": "2026-11-14T12:46:31Z",
  "modules": {
   "visualizer": {
    "description": "Full-screen music visualizer for the music page: the AtriHord scene set and 134 curated MilkDrop presets (Butterchurn), chosen by the genre of the track (16 genre groups).",
@@ -21,20 +21,20 @@
    "install_default": true,
    "name": "Visualizer",
    "sha256": {
-    "conductor.js": "d739282900f14d223bd29d71f6dbc16f0f9d356363c9f0fceb1535dd8b610a2f",
+    "conductor.js": "8975c916e1d5bee562f61c84e2a6c4db040ddeaa52ddd2f7f37192178c7bd67d",
     "design.js": "64c19dfdd1e939a5c1148c7bf5a24d903f758b8d888de628e468b39c1c020265",
     "genres.js": "9e95a83d4426fb09688bbc90fbfe8e45c5f8a5b8466dfd0345d5e0d86ebf79b3",
-    "module.js": "4866f73f11dfdd94beb0edbddef4f42fcbf63919cd193f82c2358b36ef4cbb8d",
-    "module.json": "6264f04e31e59925551a0906111102aab0c173d288b3c2aaa7dbf484cf93bc4e",
+    "module.js": "43b772394c9f7de83a4238cbbd1c4a4eae6dd03f9509692ae787fed062b097eb",
+    "module.json": "de20e18c43a931aac8b411cd29f5c2e6d5946f16f91ab6f6604844f4c07a79d6",
     "presets-curated.js": "12b985ea3d49c8f192fdd29b834410e51561a8c994774c93022257bba89067bd",
     "presets-genres.js": "018fd060f030868a497f38f4d868df28ea2a48ec7eaad7a936390ab8563470a0",
     "scenes.js": "600217530dd8a12b6a7b483f0b98cd1d42f3e6ef0479dd012d1c28ebdfe10f5e",
     "strands.js": "1117960af3e920138cfa9e119505a1498b6d7ab752e11b642082abe8e9452ddc",
     "vendor/butterchurn.min.js": "4e67421bc18d48fac4a6ff4e69e2778f770737fbdd4e323438da154085b4818d",
-    "visualizer.js": "1ca052b466fa16f7db0e703c1dfca2e1939ccd5fa1d661ea5a2e9a8576da4d12"
+    "visualizer.js": "c3bb711076e475ba043b9e3caa6326989dc98f7bdaea13e7cffda5cf5f89ccc2"
    },
    "sizes": {
-    "conductor.js": 3774,
+    "conductor.js": 3804,
     "design.js": 5793,
     "genres.js": 12390,
     "module.js": 1397,
@@ -44,9 +44,9 @@
     "scenes.js": 20071,
     "strands.js": 29258,
     "vendor/butterchurn.min.js": 192520,
-    "visualizer.js": 18016
+    "visualizer.js": 18844
    },
-   "version": "1.2.1"
+   "version": "1.2.2"
   }
  }
 }

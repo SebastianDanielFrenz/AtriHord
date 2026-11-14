@@ -33,7 +33,7 @@
 .avis-bar button{width:44px;height:44px;border-radius:50%;border:0;background:rgba(10,12,24,.55);color:#e9ecf5;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(8px)}
 .avis-bar button:hover,.avis-bar button[aria-pressed=true]{background:rgba(57,135,229,.55)}
 .avis-bar svg{width:22px;height:22px}
-.avis-cap{position:absolute;left:24px;bottom:24px;display:flex;gap:14px;align-items:center;max-width:min(70vw,640px);transition:opacity .6s}
+.avis-cap{position:absolute;left:24px;bottom:24px;display:flex;gap:14px;align-items:center;max-width:min(56vw,640px);transition:opacity .6s}
 .avis-cap img{width:56px;height:56px;border-radius:8px;object-fit:cover;box-shadow:0 4px 18px rgba(0,0,0,.5)}
 .avis-cap b{display:block;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.7)}
 .avis-cap span{display:block;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.7)}
@@ -41,6 +41,9 @@
 .avis-cap i:empty{display:none}
 .avis-scene{position:absolute;top:24px;left:24px;opacity:0;font-size:13px;letter-spacing:.04em;text-shadow:0 1px 8px rgba(0,0,0,.8);transition:opacity .6s}
 .avis-scene.show{opacity:.8}
+.avis-now{position:absolute;right:24px;bottom:24px;max-width:min(38vw,420px);text-align:right;font-size:12px;line-height:1.35;opacity:.7;text-shadow:0 1px 8px rgba(0,0,0,.8);transition:opacity .6s;user-select:text}
+.avis-now small{display:block;opacity:.7}
+.avis.idle .avis-now{opacity:.45}
 .avis-panel{position:absolute;top:72px;right:16px;width:280px;padding:12px 14px;border-radius:12px;background:rgba(10,12,24,.82);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.08)}
 .avis-panel label{display:grid;grid-template-columns:96px 1fr;gap:8px;align-items:center;margin:8px 0}
 .avis-panel select,.avis-panel input{width:100%;box-sizing:border-box;background:#1b1e2c;color:#e9ecf5;border:1px solid #333a52;border-radius:6px;padding:4px 6px;font:inherit}
@@ -72,6 +75,7 @@
     root.innerHTML = `
 <canvas></canvas>
 <div class="avis-scene"></div>
+<div class="avis-now" title="The scene on screen"></div>
 <div class="avis-cap"><img alt="" hidden><div><b></b><span></span><i class="avis-genre"></i></div></div>
 <div class="avis-bar">
   <button type="button" data-a="next" title="Next scene (A)" aria-label="Next scene">${svg(ICON.next)}</button>
@@ -187,6 +191,15 @@
     label(name);
   }
   function label(name) {
+    // bottom right, always: the full name of the scene on screen and its place in the current list
+    const st = conductor && conductor.state();
+    const now = $('.avis-now');
+    now.textContent = name;
+    if (st && st.scene === name) {
+      const sm = document.createElement('small');
+      sm.textContent = (st.i + 1) + ' / ' + st.n + (cfg.collection === 'genre' && fam ? ' · ' + VisGenres.FAMILIES[fam].label + ' scenes' : ' · all scenes');
+      now.append(sm);
+    }
     const el = $('.avis-scene');
     el.textContent = name.replace(/^AtriHord - /, '') + (cfg.collection === 'genre' && fam ? ' · ' + VisGenres.FAMILIES[fam].label : '');
     el.classList.add('show');
