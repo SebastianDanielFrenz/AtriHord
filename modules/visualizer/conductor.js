@@ -2,6 +2,7 @@
 //   const c = VisConductor.create({ scenes: ['A', 'B', ...], load(name, blendSeconds), mode: 'auto', phrases: 2 });
 //   every frame: c.update(now, features)   // features from MusicVisualizer.audioFeatures(analyser): bass, level, beat
 //   c.next()                               // the trigger (button, key, later the music page)
+//   c.start(c.pick()) / c.jump()           // start at / go to a random scene of the list
 // Modes:
 //   auto   - change at the end of a phrase (32 beats = 8 bars of 4/4) after `phrases` phrases, AND at once on a drop
 //   drops  - change only on a drop (with a long time fallback, so a track without drops still moves on)
@@ -35,6 +36,14 @@
       stop() { started = false; },
       get active() { return started; },
       next(why) { if (started) go(st.i + 1, why === 'drop' ? 0.6 : 2.5, why || 'trigger'); },
+      // a random place in the list, not the scene on screen (the start of a session or of a new genre)
+      pick() {
+        const n = st.scenes.length;
+        if (n < 2) return 0;
+        const r = Math.floor(Math.random() * (st.i >= 0 && st.i < n ? n - 1 : n));
+        return st.i >= 0 && r >= st.i ? r + 1 : r;
+      },
+      jump(why) { if (started) go(api.pick(), 2.5, why || 'jump'); },
       setMode(m) { st.mode = m; },
       setPhrases(n) { st.phrases = Math.max(1, n | 0); },
       // a new list; the scene on screen stays when the new list has it (returns true), else the next change starts it

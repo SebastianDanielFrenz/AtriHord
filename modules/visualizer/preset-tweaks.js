@@ -65,6 +65,23 @@
       p.comp = ' shader_body {\n  ret = texture (sampler_main, uv).xyz;\n' +
         '  ret *= 0.55 + 0.3 * clamp(bass_att, 0.0, 1.6) + 0.35 * clamp(bass, 0.0, 2.0);\n }';
     },
+    // the branching tree only bent slowly with the averaged level: its branches swing three times as far with the
+    // music, it grows and lights up with the bass, the picture zooms on the kick and turns with the highs, and the brightness follows the bass
+    'shifter - dark tides bdrv mix': (p) => {
+      const tree = (p.waves || [])[3];
+      for (const q of ['q1', 'q2', 'q3']) {
+        const v = { q1: 'tva', q2: 'tvb', q3: 'tvc' }[q];
+        tree.frame_eqs_str = must(tree.frame_eqs_str, 'a.' + v + '=a.tic*a.' + q + '*.5;', 'a.' + v + '=a.tic*a.' + q + '*1.5;');
+      }
+      // the tree's length was kept in a wave variable that Butterchurn resets every frame, so it never grew past a dot:
+      // the main frame now hands it over in q7, growing with the bass (none in silence); its lines light up on the
+      // beat (they were drawn at a fixed 10 %)
+      tree.frame_eqs_str = must(tree.frame_eqs_str, 'a.t4=a.len;', 'a.t4=a.q7;');
+      p.frame_eqs_str += 'a.q7=above(a.q6,0)*(.16+.16*Math.min(2,a.bass_att));';
+      tree.point_eqs_str = must(tree.point_eqs_str, 'a.x=.75*(a.x-.5)+.5;a.a=.1;', 'a.x=.75*(a.x-.5)+.5;a.a=.08+.3*Math.min(2,a.bass);');
+      p.frame_eqs_str = must(p.frame_eqs_str, 'a.zoom=1.01;', 'a.zoom=1.01+.035*Math.max(0,a.bass-.9);a.rot=.015*(a.treb_att-1);');
+      p.comp = tail(p.comp, '  ret *= 0.45 + 0.3 * clamp(bass_att, 0.0, 1.6) + 0.45 * clamp(bass, 0.0, 2.0);');
+    },
     // looked the same with and without music: dim at rest, brightens and flashes with the bass, lights pulse with the
     // mids, and the camera sways a little on the beat
     'martin - crystal alley': (p) => {

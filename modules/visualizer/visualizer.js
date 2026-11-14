@@ -132,7 +132,7 @@
     if (k === 'changes' && conductor) conductor.setMode(cfg.changes);
     if (k === 'phrases' && conductor) conductor.setPhrases(phrases());
     if (k === 'collection') caption();
-    if (k === 'collection' && conductor) { conductor.setPhrases(phrases()); conductor.setScenes(sceneList()); conductor.start(0); }
+    if (k === 'collection' && conductor) { conductor.setPhrases(phrases()); conductor.setScenes(sceneList()); conductor.start(conductor.pick()); }
     if (k === 'scheme') useScheme(cfg.scheme === 'auto' ? coverScheme : cfg.scheme);
     info();
   }
@@ -173,7 +173,7 @@
   }
   // calm music changes scene after twice as many phrases
   const phrases = () => cfg.phrases * (cfg.collection === 'genre' && fam && VisGenres.FAMILIES[fam].slow ? 2 : 1);
-  // the song's family changed: play that family's scenes (the one on screen stays if it suits)
+  // the song's family changed: play that family's scenes, from a random one of them
   // returns true when it already changed the scene
   function useFamily(style) {
     const f = VisGenres.family(style);
@@ -182,8 +182,8 @@
     fam = f;
     if (!conductor || cfg.collection !== 'genre') return false;
     conductor.setPhrases(phrases());
-    if (conductor.setScenes(sceneList())) { if (current) label(current); return false; }
-    if (conductor.active) { conductor.next('genre'); return true; }
+    conductor.setScenes(sceneList());
+    if (conductor.active) { conductor.jump('genre'); return true; }
     return false;
   }
   let current = '', sceneTimer = 0;
@@ -292,7 +292,7 @@
     lastT = 0;
     songKey = '';
     songChanged();
-    if (!conductor.active) conductor.start(0);
+    if (!conductor.active) conductor.start(conductor.pick());
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(frame);
     document.addEventListener('keydown', onKey, true);
