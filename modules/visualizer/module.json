@@ -1,7 +1,7 @@
 {
   "id": "visualizer",
   "name": "Visualizer",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Full-screen music visualizer for the music page: the AtriHord scene set and 134 curated MilkDrop presets (Butterchurn), chosen by the genre of the track (16 genre groups).",
   "install_default": true,
   "files": [

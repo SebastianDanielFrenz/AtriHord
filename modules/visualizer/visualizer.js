@@ -37,13 +37,15 @@
 .avis-cap img{width:56px;height:56px;border-radius:8px;object-fit:cover;box-shadow:0 4px 18px rgba(0,0,0,.5)}
 .avis-cap b{display:block;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.7)}
 .avis-cap span{display:block;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.7)}
+.avis-cap i{display:block;margin-top:3px;font-style:normal;font-size:12px;letter-spacing:.04em;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.7)}
+.avis-cap i:empty{display:none}
 .avis-scene{position:absolute;top:24px;left:24px;opacity:0;font-size:13px;letter-spacing:.04em;text-shadow:0 1px 8px rgba(0,0,0,.8);transition:opacity .6s}
 .avis-scene.show{opacity:.8}
 .avis-panel{position:absolute;top:72px;right:16px;width:280px;padding:12px 14px;border-radius:12px;background:rgba(10,12,24,.82);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.08)}
 .avis-panel label{display:grid;grid-template-columns:96px 1fr;gap:8px;align-items:center;margin:8px 0}
 .avis-panel select,.avis-panel input{width:100%;box-sizing:border-box;background:#1b1e2c;color:#e9ecf5;border:1px solid #333a52;border-radius:6px;padding:4px 6px;font:inherit}
 .avis-panel input[type=range]{padding:0}
-.avis-panel small{display:block;opacity:.6;margin-top:6px}
+.avis-panel small{display:block;opacity:.6;margin-top:6px;white-space:pre-line}
 .avis.idle .avis-bar,.avis.idle .avis-panel{opacity:0;pointer-events:none}
 .avis.idle .avis-cap{opacity:.55}
 `;
@@ -70,7 +72,7 @@
     root.innerHTML = `
 <canvas></canvas>
 <div class="avis-scene"></div>
-<div class="avis-cap"><img alt="" hidden><div><b></b><span></span></div></div>
+<div class="avis-cap"><img alt="" hidden><div><b></b><span></span><i class="avis-genre"></i></div></div>
 <div class="avis-bar">
   <button type="button" data-a="next" title="Next scene (A)" aria-label="Next scene">${svg(ICON.next)}</button>
   <button type="button" data-a="settings" title="Settings" aria-label="Settings" aria-pressed="false">${svg(ICON.gear)}</button>
@@ -110,14 +112,22 @@
 
   function info() {
     const el = root.querySelector('.avis-info');
-    if (el) el.textContent = (cfg.collection === 'genre' ? 'Genre: ' + (fam ? famStyle + ' → ' + VisGenres.FAMILIES[fam].label : 'unknown → all scenes') + ' · ' : '') +
-      'Delay ' + cfg.delay + ' ms · ' + (cfg.scheme === 'auto' ? 'colours from the cover: ' + coverScheme : 'colours: ' + cfg.scheme);
+    if (!el) return;
+    const g = !famStyle ? 'Genre: not known yet' + (cfg.collection === 'genre' ? ' → all scenes' : '')
+      : 'Genre: ' + famStyle + (fam ? ' → ' + VisGenres.FAMILIES[fam].label + ' scenes' : ' → no group, all scenes') + (cfg.collection === 'genre' ? '' : ' (when Scenes is "By genre")');
+    el.textContent = g + '\nDelay ' + cfg.delay + ' ms · ' + (cfg.scheme === 'auto' ? 'colours from the cover: ' + coverScheme : 'colours: ' + cfg.scheme);
+  }
+  // the genre under the song's title and artist: the style, and the scene group when it says something else
+  function caption() {
+    const lab = fam ? VisGenres.FAMILIES[fam].label : '';
+    $('.avis-genre').textContent = famStyle + (lab && cfg.collection === 'genre' && lab.toLowerCase() !== famStyle.toLowerCase() ? ' · ' + lab : '');
   }
   function apply(k) {
     if (k === 'delay' && delay) delay.delayTime.setTargetAtTime(cfg.delay / 1000, delay.context.currentTime, 0.05);
     if (k === 'quality') size();
     if (k === 'changes' && conductor) conductor.setMode(cfg.changes);
     if (k === 'phrases' && conductor) conductor.setPhrases(phrases());
+    if (k === 'collection') caption();
     if (k === 'collection' && conductor) { conductor.setPhrases(phrases()); conductor.setScenes(sceneList()); conductor.start(0); }
     if (k === 'scheme') useScheme(cfg.scheme === 'auto' ? coverScheme : cfg.scheme);
     info();
@@ -202,6 +212,8 @@
     if (key === songKey) return;
     songKey = key;
     useFamily(np && np.genre);
+    caption();
+    info();
     if (!np || !np.cover) { img.hidden = true; img.removeAttribute('src'); coverScheme = 'spectrum'; if (cfg.scheme === 'auto') useScheme('spectrum'); info(); return; }
     img.hidden = false;
     img.src = np.cover;
