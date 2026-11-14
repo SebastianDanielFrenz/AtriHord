@@ -15,7 +15,6 @@
         "AtriHord - Mandala Bloom",
         "AtriHord - Pulse Field",
         "_Mig_085",
-        "Adam Eatit Mashup FX 2 martin - disco mix + Lodus + Geiss + Ludicrous speed + Aderrasi 2_1",
         "Geiss - Desert Rose 4",
         "martin - move this body",
         "martin - another kind of groove",
@@ -68,7 +67,8 @@
         "ORB - Depth Charge 2",
         "An AdamFX n Martin Infusion 2 flexi - Why The Sky Looks Diffrent Today - AdamFx n Martin Infusion - Tack Tile Disfunction B",
         "_Mig_014_version2",
-        "Martin - cool morning"] },
+        "Martin - cool morning",
+        "Adam Eatit Mashup FX 2 martin - disco mix + Lodus + Geiss + Ludicrous speed + Aderrasi 2_1"] },
     trance: { label: "Trance", slow: false,   // trance, tech / progressive trance, hands up
       scenes: [
         "AtriHord - Ring Tunnel",
