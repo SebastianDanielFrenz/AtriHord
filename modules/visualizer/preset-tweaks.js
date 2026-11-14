@@ -50,6 +50,21 @@
       // the camera and colour drift ran at a speed proportional to loudness: half as fast now
       p.frame_eqs_str = must(p.frame_eqs_str, 'a.vol=.03*(', 'a.vol=.015*(');
     },
+    // the 3D dot spiral only turned a little faster with louder music: now the spiral swells with the bass, spins on
+    // a kick, and the feedback behind it zooms on the kick and turns with the highs
+    'EVET - RGB Singularity': (p) => {
+      for (const w of (p.waves || []).slice(0, 2)) {
+        w.point_eqs_str = must(w.point_eqs_str, 'a.zoom=.35*div(1,a.z+a.a)', 'a.zoom=.35*(.7+.45*Math.min(2,a.bass_att))*div(1,a.z+a.a)');
+        w.frame_eqs_str = must(w.frame_eqs_str, 'a.j+=.01*a.bass_att;', 'a.j+=.01*a.bass_att+.03*Math.max(0,a.bass-1);');
+      }
+      p.frame_eqs_str += 'a.zoom=.9901+.04*Math.max(0,a.bass-.9);a.rot=.02*(a.treb_att-1);';
+      // the colour flow of its warp shader runs with the bass (green) and the mids (blue) instead of at a fixed speed
+      p.warp = must(p.warp, '((tmpvar_6 * texsize.zw) * 6.0)', '((tmpvar_6 * texsize.zw) * (1.5 + 4.5 * clamp(bass_att, 0.0, 2.0)))');
+      p.warp = must(p.warp, '((tmpvar_8 * texsize.zw) * 2.0)', '((tmpvar_8 * texsize.zw) * (0.5 + 1.5 * clamp(mid_att, 0.0, 2.0)))');
+      // it has no comp shader of its own: one that shows the picture as is, with the brightness on the beat
+      p.comp = ' shader_body {\n  ret = texture (sampler_main, uv).xyz;\n' +
+        '  ret *= 0.55 + 0.3 * clamp(bass_att, 0.0, 1.6) + 0.35 * clamp(bass, 0.0, 2.0);\n }';
+    },
     // looked the same with and without music: dim at rest, brightens and flashes with the bass, lights pulse with the
     // mids, and the camera sways a little on the beat
     'martin - crystal alley': (p) => {
