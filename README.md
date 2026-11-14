@@ -19,11 +19,15 @@ people, search, shares, trash, upload, a VR viewer, 2D→3D conversion and smoot
 
 ```bash
 git clone <this repository> atrihord && cd atrihord
-sudo apt install -y python3-venv ffmpeg git
-python3 -m venv venv
-venv/bin/pip install -r requirements.txt
+./install.sh                      # system packages, venv, Python packages, then asks for optional modules
 MEDIA_SINGLE_USER=me venv/bin/python server.py
 ```
+
+`install.sh` does what the manual steps did (`apt install python3-venv ffmpeg git`, `python3 -m venv venv`,
+`venv/bin/pip install -r requirements.txt`) and then offers the **optional modules** (for now the music
+visualizer). Unattended: `./install.sh --modules visualizer` (or `all` / `none`). Modules can be added, updated
+or removed later in Settings → Server → Modules, from the signed list in the online repo, or with
+`python3 module_manager.py list|install|update|remove` (see `modules/README.md`).
 
 Open <http://127.0.0.1:8000/>. The server binds to localhost only unless you set `MEDIA_BIND`.
 Downloaded files go to `web_files/downloads/`; more libraries can be added as "roots" in the settings page.

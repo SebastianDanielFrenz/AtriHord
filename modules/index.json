@@ -1,0 +1,46 @@
+{
+ "format": 1,
+ "generated": "2026-11-14T11:07:06Z",
+ "modules": {
+  "visualizer": {
+   "description": "Full-screen music visualizer for the music page: the AtriHord scene set and curated MilkDrop presets (Butterchurn).",
+   "files": [
+    "module.json",
+    "module.js",
+    "vendor/butterchurn.min.js",
+    "design.js",
+    "scenes.js",
+    "conductor.js",
+    "strands.js",
+    "presets-curated.js",
+    "visualizer.js"
+   ],
+   "id": "visualizer",
+   "install_default": true,
+   "name": "Visualizer",
+   "sha256": {
+    "conductor.js": "7ce6d7b19ad08e364e0537d9ada26fc404599dc500c0c11447811bd9f938e172",
+    "design.js": "64c19dfdd1e939a5c1148c7bf5a24d903f758b8d888de628e468b39c1c020265",
+    "module.js": "b41329302c19cd1c831060bbb7acade5b6112f44eacd30a6a5c79aaee3709024",
+    "module.json": "f33848ee242057cac75669556ef3ed7d3593e298d64ac23176e388aa7a4e9cd9",
+    "presets-curated.js": "12b985ea3d49c8f192fdd29b834410e51561a8c994774c93022257bba89067bd",
+    "scenes.js": "600217530dd8a12b6a7b483f0b98cd1d42f3e6ef0479dd012d1c28ebdfe10f5e",
+    "strands.js": "1117960af3e920138cfa9e119505a1498b6d7ab752e11b642082abe8e9452ddc",
+    "vendor/butterchurn.min.js": "4e67421bc18d48fac4a6ff4e69e2778f770737fbdd4e323438da154085b4818d",
+    "visualizer.js": "6a213a8d7bdd1306aebaf40ad7950be8aa02b77c20eb4def6e9fc657455e002b"
+   },
+   "sizes": {
+    "conductor.js": 3539,
+    "design.js": 5793,
+    "module.js": 1237,
+    "module.json": 439,
+    "presets-curated.js": 81944,
+    "scenes.js": 20071,
+    "strands.js": 29258,
+    "vendor/butterchurn.min.js": 192520,
+    "visualizer.js": 15499
+   },
+   "version": "1.0.0"
+  }
+ }
+}

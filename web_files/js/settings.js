@@ -20,6 +20,7 @@ const SECTIONS = [
   { id: 'character-blacklist', title: 'Character blacklist', group: 'Server' },
   { id: 'stereo3d', title: '2D to 3D', group: 'Server' },
   { id: 'vision-worker', title: 'Vision worker', group: 'Server' },
+  { id: 'modules', title: 'Modules', group: 'Server' },
 ];
 
 let settingsData = null;       // {schema, values, server_time}
@@ -1173,6 +1174,77 @@ async function renderStereo3d(view) {
   poll();
 }
 
+// Optional modules (module_manager.py, MODULE_SYSTEM_PLAN.md): browser-only feature folders such as the music
+// visualizer. Installed ones live in web_files/js/modules/; the online repo's list is signed, and the server checks
+// the signature and every file before it installs anything.
+async function renderModules(view) {
+  const box = card('Modules', h('p', { class: 'settings-help' }, 'Loading…'));
+  view.append(box);
+  const act = async (button, method, url, body, done) => {
+    button.disabled = true;
+    try {
+      const out = await api(method, url, body);
+      toast(done(out));
+      draw(out.overview);
+    } catch (err) {
+      toast(`Not done: ${err.message}`, 'error');
+      button.disabled = false;
+    }
+  };
+  const draw = (ov) => {
+    const rows = (ov.modules || []).map((m) => {
+      const buttons = [];
+      const from = m.available ? 'online' : (m.local ? 'local' : null);
+      const ver = m.available || m.local;
+      if (!m.installed && from) {
+        const b = h('button', { type: 'button', class: 'btn', text: `Install ${ver}` });
+        b.addEventListener('click', () => act(b, 'POST', `/api/modules/${m.id}/install`, { source: from },
+          (o) => `${m.name} ${o.installed} installed`));
+        buttons.push(b);
+      }
+      if (m.installed && (m.update || m.broken) && from) {
+        const b = h('button', { type: 'button', class: 'btn', text: m.broken ? `Repair (${ver})` : `Update to ${ver}` });
+        b.addEventListener('click', () => act(b, 'POST', `/api/modules/${m.id}/install`, { source: from },
+          (o) => `${m.name} ${o.installed} installed`));
+        buttons.push(b);
+      }
+      if (m.installed || m.broken) {
+        const b = h('button', { type: 'button', class: 'btn btn-danger', text: 'Remove' });
+        b.addEventListener('click', () => {
+          if (!window.confirm(`Remove the module "${m.name}"? Its feature disappears for everyone; it can be installed again.`)) return;
+          act(b, 'DELETE', `/api/modules/${m.id}`, null, () => `${m.name} removed`);
+        });
+        buttons.push(b);
+      }
+      const state = m.broken ? 'broken' : m.installed ? `installed ${m.installed}${m.update ? ' (update available)' : ''}` : 'not installed';
+      return h('tr', { class: m.installed ? null : 'is-muted' },
+        h('td', { style: 'white-space: normal; min-width: 14rem' }, h('strong', {}, m.name),
+          h('div', { class: m.broken ? 'settings-error' : 'settings-help' }, m.broken || m.description)),
+        h('td', {}, state),
+        h('td', {}, m.size ? fmtBytes(m.size) : '-'),
+        h('td', {}, h('div', { class: 'settings-row-actions' }, buttons)));
+    });
+    const refresh = h('button', { type: 'button', class: 'btn', text: 'Check the online repo again' });
+    refresh.addEventListener('click', async () => {
+      refresh.disabled = true;
+      try { draw(await api('GET', '/api/modules?refresh=1')); } catch (err) { toast(`Not done: ${err.message}`, 'error'); refresh.disabled = false; }
+    });
+    fill(box, h('h3', {}, 'Modules'),
+      h('p', { class: 'settings-help' },
+        'Optional features that run in the browser. Installing one adds it for everyone on this server; ',
+        'online modules come from ', h('code', {}, `${ov.repo} (${ov.branch})`),
+        ' and are only installed when their signature and every file check out.'),
+      ov.online_error ? h('p', { class: 'settings-error' }, `Online repo: ${ov.online_error}`) : null,
+      rows.length ? h('div', { class: 'settings-table-wrap' },
+        h('table', { class: 'settings-table' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Module'), h('th', {}, 'State'), h('th', {}, 'Size'), h('th', {}, ''))),
+          h('tbody', {}, rows)))
+        : h('p', { class: 'settings-help' }, 'No modules installed or available.'),
+      h('div', { class: 'settings-row-actions' }, refresh));
+  };
+  draw(await api('GET', '/api/modules'));
+}
+
 const RENDERERS = {
   general: renderGeneral,
   appearance: renderAppearance,
@@ -1186,6 +1258,7 @@ const RENDERERS = {
   'character-blacklist': renderCharacterBlacklist,
   stereo3d: renderStereo3d,
   'vision-worker': renderVisionWorker,
+  modules: renderModules,
 };
 
 // ---------------------------------------------------------------- router --

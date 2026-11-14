@@ -106,6 +106,7 @@
     // The song menu's entries, after YouTube Music's: a play mark ahead of
     // the list for "next", behind it for "queue".
     playNext: 'M3 4v6l5-3zM10 6h11v2H10zM3 12h18v2H3zm0 5h18v2H3z',
+    visualizer: 'M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z',
     addQueue: 'M3 5h18v2H3zm0 5h18v2H3zM3 14v6l5-3zm7 2h11v2H10z',
     playlist: 'M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z',
     person: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
@@ -1235,6 +1236,7 @@
     UP.nodes = [];
     UP.viaBridge = false;
     if (SPK.sp) { try { UP.input.connect(SPK.sp); } catch (e) { /* as is */ } }
+    if (VIS.tap) { try { UP.input.connect(VIS.tap); } catch (e) { /* as is */ } }
     bridgeConnect();
     // The app has answered but its tap is still being made: route through the browser for now and switch over the
     // moment the tap exists, instead of staying on the browser's output until the next toggle.
@@ -1363,6 +1365,50 @@
   // (L, R and the mid) and handed to the speakers exactly as the upmix hands them: the left-side
   // speakers carry L, the right-side ones R, the centre the mid; "stereo" leaves everything but
   // the front pair dark and the heights stay dark until their switch is on.
+  // The visualizer: an optional module (web_files/js/modules/visualizer/, user 2026-11-14). Its manifest, module.js,
+  // is loaded once at start; when it is missing the module is not installed and the song menu of the player bar shows
+  // no Visualizer entry. The module's files load on the first open. It listens on a tap of the stereo bus, `VIS.tap`,
+  // which buildUpmixNow reconnects after it clears the bus (like the speaker meters' splitter).
+  const VIS_DIR = '/js/modules/visualizer/';
+  const VIS = { manifest: null, loading: null, tap: null };
+  function loadScript(src) {
+    return new Promise((ok, fail) => {
+      const sc = document.createElement('script');
+      sc.src = src;
+      sc.onload = ok;
+      sc.onerror = () => fail(new Error(src));
+      document.head.append(sc);
+    });
+  }
+  function visProbe() {
+    loadScript(VIS_DIR + 'module.js').then(() => {
+      VIS.manifest = (window.AtriModules && window.AtriModules.visualizer) || null;
+    }, () => { /* not installed */ });
+  }
+  function visLoad() {
+    const m = VIS.manifest;
+    if (!VIS.loading) {
+      VIS.loading = m.files.reduce((p, f) => p.then(() => loadScript(VIS_DIR + f + '?v=' + encodeURIComponent(m.version))), Promise.resolve())
+        .catch((e) => { VIS.loading = null; throw e; });
+    }
+    return VIS.loading;
+  }
+  async function openVisualizer() {
+    await startLoudness();
+    if (!LOUD.ctx || !UP.input || LOUD.off) { toast('The visualizer needs the audio engine, which this browser does not run'); return; }
+    if (!VIS.tap) { VIS.tap = LOUD.ctx.createGain(); UP.input.connect(VIS.tap); }
+    try { await visLoad(); } catch (e) { toast('The visualizer could not be loaded'); return; }
+    const entry = window[VIS.manifest.entry];
+    entry.open({
+      ctx: LOUD.ctx,
+      input: VIS.tap,
+      nowPlaying: () => {
+        const s = current();
+        return s ? { title: s.title, artist: s.artist, cover: s.cover ? coverUrl(s, 300) : null } : null;
+      },
+    });
+  }
+
   const SPK = { el: null, canvas: null, raf: 0, sp: null, an: null, buf: null, lv: {}, nodes: [] };
 
   // x: -1 left .. 1 right, y: -1 front .. 1 back (listener at 0,0)
@@ -1900,6 +1946,7 @@
   }
 
   function showNow(s) {
+    if (window.AtriVisualizer && window.AtriVisualizer.isOpen) setTimeout(() => window.AtriVisualizer.songChanged(), 0);
     $('muNowTitle').textContent = s.title;
     const sub = $('muNowSub');
     sub.replaceChildren(el('a', { href: artistHref(s.artist), text: s.artist }),
@@ -2093,7 +2140,8 @@
     $('muAutoplaySwitch').addEventListener('change', (e) => setAutoplay(e.target.checked));
     $('muNowMore').addEventListener('click', (e) => {
       const s = current();
-      if (s) songMenu(e.currentTarget, s.i, null);
+      if (s) songMenu(e.currentTarget, s.i, null, undefined,
+        VIS.manifest ? { text: 'Visualizer', icon: 'visualizer', run: () => { openVisualizer(); } } : null);
     });
     $('muMute').addEventListener('click', () => { setMuted(!mediaEl.muted); updateVolumeIcon(); saveQueue(); });
     // The volume is whatever was last chosen, from the moment the page starts
@@ -4415,6 +4463,7 @@
     setIcon($('muMenuBtn'), 'menu');
     document.querySelector('.mu-search-icon').replaceChildren(icon('search'));
     bindPlayer();
+    visProbe();
     bindStage();
     updateShuffleButton();
     updatePlayButton();

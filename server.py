@@ -27,6 +27,7 @@ import unicodedata
 from html import escape as html_escape
 import psutil
 import genre_map
+import module_manager
 import media_ai
 import media_dates
 import media_places
@@ -11509,6 +11510,45 @@ def settings_3d():
 @require_admin
 def settings_3d_cache_clear():
     return jsonify({"removed": stereo3d_service().clear_cache()})
+
+
+# Optional modules (MODULE_SYSTEM_PLAN.md, module_manager.py): browser-only feature folders installed into
+# web_files/js/modules/<id>/. Online installs come from the signed index of the GitHub repo; module_manager checks the
+# signature and every file's hash before anything is written, and swaps a module in with one rename.
+@app.route("/api/modules", methods=["GET"])
+@require_admin
+def modules_overview():
+    refresh = request.args.get("refresh") == "1"
+    if refresh:
+        try:
+            module_manager.online_index(force=True)
+        except module_manager.ModuleError:
+            pass                                  # overview() reports it
+    return jsonify(module_manager.overview(online=True))
+
+
+@app.route("/api/modules/<mid>/install", methods=["POST"])
+@require_admin
+def modules_install(mid):
+    """Body {"source": "online" | "local"}: install or update from the online repo (default) or this checkout."""
+    source = (request.get_json(silent=True) or {}).get("source", "online")
+    try:
+        m = module_manager.install_local(mid) if source == "local" else module_manager.install_online(mid)
+    except module_manager.ModuleError as e:
+        return jsonify({"error": str(e)}), 400
+    app.logger.info("module %s %s installed (%s) by %s", mid, m.get("version"), source,
+                    (get_authenticated_user() or {}).get("username", "?"))
+    return jsonify({"installed": m.get("version"), "overview": module_manager.overview(online=True)})
+
+
+@app.route("/api/modules/<mid>", methods=["DELETE"])
+@require_admin
+def modules_remove(mid):
+    try:
+        module_manager.remove(mid)
+    except module_manager.ModuleError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"removed": mid, "overview": module_manager.overview(online=True)})
 
 
 # -------------------------------------------------------------------
