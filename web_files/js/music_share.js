@@ -40,6 +40,7 @@
     collapse: 'M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z',
     fullscreen: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
     fullscreenExit: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
+    visualizer: 'M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z',
   };
 
   function icon(name) {
@@ -265,6 +266,66 @@
     else LOUD.ctx.resume().then(route, () => {});
   }
 
+  // ---- the visualizer --------------------------------------------------------
+  // The music page's optional module (music.js openVisualizer), through the
+  // public assets route, which serves the installed module's files (user,
+  // 2026-11-15: "expose the audio visualizer to shares"). Its manifest is
+  // probed once; when the module is not installed, or the browser cannot run
+  // Web Audio (iOS: see above), there is no button. It listens on a tap after
+  // the loudness gain, so it sees what is heard.
+  const VIS_DIR = '/api/public/assets/js/modules/visualizer/';
+  const VIS = { manifest: null, loading: null, tap: null };
+  function loadScript(src) {
+    return new Promise((ok, fail) => {
+      const sc = document.createElement('script');
+      sc.src = src;
+      sc.onload = ok;
+      sc.onerror = () => fail(new Error(src));
+      document.head.append(sc);
+    });
+  }
+  function visProbe() {
+    if (IOS || !(window.AudioContext || window.webkitAudioContext)) return;
+    loadScript(VIS_DIR + 'module.js').then(() => {
+      VIS.manifest = (window.AtriModules && window.AtriModules.visualizer) || null;
+      if (VIS.manifest) { $('msVis').hidden = false; $('msVisStage').hidden = false; }
+    }, () => { /* not installed */ });
+  }
+  function visLoad() {
+    const m = VIS.manifest;
+    if (!VIS.loading) {
+      VIS.loading = m.files.reduce((p, f) => p.then(() => loadScript(VIS_DIR + f + '?v=' + encodeURIComponent(m.version))), Promise.resolve())
+        .catch((e) => { VIS.loading = null; throw e; });
+    }
+    return VIS.loading;
+  }
+  function visNote(text) {
+    const sub = $('msNowSub');
+    const was = sub.textContent;
+    sub.textContent = text;
+    setTimeout(() => { if (sub.textContent === text) sub.textContent = was; }, 4000);
+  }
+  async function openVisualizer() {
+    if (!VIS.manifest) return;
+    startLoudness();
+    // the route to the speakers is made once the context runs (a moment after the click)
+    for (let i = 0; i < 40 && !LOUD.node && !LOUD.off; i++) await new Promise((r) => setTimeout(r, 25));
+    if (!LOUD.node) { visNote('The visualizer needs Web Audio, which this browser does not run here'); return; }
+    if (!VIS.tap) { VIS.tap = LOUD.ctx.createGain(); LOUD.node.connect(VIS.tap); }
+    try { await visLoad(); } catch (e) { visNote('The visualizer could not be loaded'); return; }
+    window[VIS.manifest.entry].open({
+      ctx: LOUD.ctx,
+      input: VIS.tap,
+      nowPlaying: () => {
+        const s = current();
+        return s ? { title: s.title, artist: s.artist, cover: coverSrc(s, 300), genre: s.genre || null } : null;
+      },
+    });
+  }
+  function visSongChanged() {
+    if (window.AtriVisualizer && window.AtriVisualizer.isOpen) setTimeout(() => window.AtriVisualizer.songChanged(), 0);
+  }
+
   function showMessage(title, text) {
     $('msPlayer').hidden = true;
     $('msMain').replaceChildren(el('div', { class: 'ms-empty' },
@@ -393,6 +454,7 @@
     renderQueue();
     markPlaying();
     updatePlay();
+    visSongChanged();
   }
 
   function showProgress(pos, dur) {
@@ -628,6 +690,10 @@
     setIcon($('msStageClose'), 'collapse');
     setIcon($('msStageDl'), 'download');
     setIcon($('msFullscreen'), 'fullscreen');
+    setIcon($('msVis'), 'visualizer');
+    setIcon($('msVisStage'), 'visualizer');
+    $('msVis').addEventListener('click', openVisualizer);
+    $('msVisStage').addEventListener('click', openVisualizer);
     $('msPlay').addEventListener('click', togglePlay);
     $('msNext').addEventListener('click', next);
     $('msPrev').addEventListener('click', prev);
@@ -736,6 +802,7 @@
 
   bindUpscale();
   bind();
+  visProbe();
   if (!TOKEN) showMessage('This link does not exist', null);
   else load();
 })();
