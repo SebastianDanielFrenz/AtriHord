@@ -73,7 +73,9 @@
         const v = { q1: 'tva', q2: 'tvb', q3: 'tvc' }[q];
         tree.frame_eqs_str = must(tree.frame_eqs_str, 'a.' + v + '=a.tic*a.' + q + '*.5;', 'a.' + v + '=a.tic*a.' + q + '*1.5;');
       }
-      // the tree's length was kept in a wave variable that Butterchurn resets every frame, so it never grew past a dot:
+      // the tree's length `len` is a frame variable of the wave, but its point equations use a `len` of their own;
+      // Butterchurn runs both on one variable set and keeps what the last point left (MilkDrop keeps them apart), so
+      // the length collapsed every frame and the tree never grew past a dot:
       // the main frame now hands it over in q7, growing with the bass (none in silence); its lines light up on the
       // beat (they were drawn at a fixed 10 %)
       tree.frame_eqs_str = must(tree.frame_eqs_str, 'a.t4=a.len;', 'a.t4=a.q7;');
@@ -82,9 +84,9 @@
       p.frame_eqs_str = must(p.frame_eqs_str, 'a.zoom=1.01;', 'a.zoom=1.01+.035*Math.max(0,a.bass-.9);a.rot=.015*(a.treb_att-1);');
       p.comp = tail(p.comp, '  ret *= 0.45 + 0.3 * clamp(bass_att, 0.0, 1.6) + 0.45 * clamp(bass, 0.0, 2.0);');
     },
-    // its 3D ribbon was meant to spin on peaks of the mids and highs, but kept that state in wave variables that
-    // Butterchurn resets every frame, and the brightness it read (q26) was never set: the frame equations now keep the
-    // spin (q27) and the bass level (q26); the picture zooms on the kick and the ribbon brightens with the bass
+    // the mashup lost the frame equations of the preset it came from: the brightness of its 3D ribbon reads q26, which
+    // nothing set, so the ribbon stayed faint whatever played. The frame equations now set q26 from the bass and a spin
+    // (q27) that steps on peaks of the mids and highs; the picture zooms on the kick and turns with the highs
     'Adam Eatit Mashup FX 2 martin - disco mix + Lodus + Geiss + Ludicrous speed + Baked Ft another AdamFX Mashup 7_1': (p) => {
       p.init_eqs_str = (p.init_eqs_str || '') + 'a.vol_m=1;a.pulse=0;a.winkel=0;a.q26=0;a.q27=0;';
       p.frame_eqs_str = (p.frame_eqs_str || '') +
@@ -115,18 +117,40 @@
     },
   };
 
+  // The presets that looked nearly the same with and without music in the scan of all presets (2026-11-15,
+  // tests/ui/vis_reactivity.html): one mild beat reaction for all of them - a zoom kick, a slight turn with the highs
+  // and a brightness pulse (in their comp shader, or through the gamma of Butterchurn's default comp when they have
+  // none). Silence dims them to three quarters; average music is about as bright as before.
+  const BOOST = [
+    'Flexi - mindblob mix', '$$$ Royal - Mashup (160)', 'martin + stahlregen - martin in da mash 12',
+    'martin + stahlregen - martin in da mash 12a', 'Eo.S. + Phat - Emergent factors', 'Aderrasi - Curse of the Mirror Emu',
+    'Eo.S. + Geiss - glowsticks v2 02 (Relief Mix)',
+    'Martin N AdamFX Infusion = Phat+Yin+Eo.S_Mandala Chaser Ft AdamFX n Martin - The Beast Mandala Chaser FX H',
+    'Unchained - Fuzzy Sciences', 'Geiss - Desert Rose 4', 'ORB - Blue Emotion',
+    'Stahlregen + martin + others - Psychedelic Metal Flower', 'Flexi - blame hexcollie twice',
+    'Aderrasi - Storm of the Eye (Thunder) - mash0000 - quasi pseudo meta concentrics',
+    'Adam Eatit Mashup FX 2 martin - disco mix + Lodus + Geiss + Ludicrous speed + Aderrasi 2_1',
+  ];
+  function boost(p) {
+    const own = !!(p.comp || '').trim();
+    p.frame_eqs_str = (p.frame_eqs_str || '') + 'a.zoom+=.03*Math.max(0,a.bass-.9);a.rot+=.008*(a.treb_att-1);' +
+      (own ? '' : 'a.gammaadj*=.75+.15*Math.min(1.6,a.bass_att)+.2*Math.min(2,a.bass);');
+    if (own) p.comp = tail(p.comp, '  ret *= 0.75 + 0.15 * clamp(bass_att, 0.0, 1.6) + 0.2 * clamp(bass, 0.0, 2.0);');
+  }
+
   const originals = {};
   function apply(name, preset) {
     const edit = EDITS[name];
-    if (!edit || !preset) return preset;
+    if ((!edit && !BOOST.includes(name)) || !preset) return preset;
     const copy = JSON.parse(JSON.stringify(preset));
-    edit(copy);
+    if (edit) edit(copy);
+    if (BOOST.includes(name)) boost(copy);
     return copy;
   }
-  for (const name of Object.keys(EDITS)) {
+  for (const name of new Set([...Object.keys(EDITS), ...BOOST])) {
     if (!C[name]) continue;
     originals[name] = C[name];
     try { C[name] = apply(name, C[name]); } catch (e) { console.warn('visualizer tweak', name, e); C[name] = originals[name]; }
   }
-  window.VisTweaks = { apply, originals, names: Object.keys(EDITS) };
+  window.VisTweaks = { apply, originals, names: [...new Set([...Object.keys(EDITS), ...BOOST])], boosted: BOOST };
 })();
