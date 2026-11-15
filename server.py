@@ -14504,6 +14504,38 @@ PUBLIC_SHARE_ASSETS = {
     "js/upscale.js",
 }
 
+# The visualizer module (web_files/js/modules/visualizer/, optional): the music share page offers it too (user,
+# 2026-11-15: "expose the audio visualizer to shares"). Its file list changes with each module version, so instead of
+# listing it above, the allowed set is the files the installed module has right now - still exact paths that exist,
+# found by walking only that folder, so "../" cannot reach anything else; not installed means nothing extra is served.
+PUBLIC_MODULES = {"visualizer"}
+_public_module_cache = {}
+
+
+def public_module_files(module_id):
+    if module_id not in PUBLIC_MODULES:
+        return frozenset()
+    base = os.path.join(WEB_FILES_DIR, "js", "modules", module_id)
+    try:
+        stamp = os.stat(base).st_mtime_ns
+    except OSError:
+        return frozenset()
+    hit = _public_module_cache.get(module_id)
+    if hit and hit[0] == stamp and time.time() - hit[1] < 60:
+        return hit[2]
+    files = set()
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for name in filenames:
+            if name.startswith(".") or not name.endswith((".js", ".json")):
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, name), WEB_FILES_DIR).replace(os.sep, "/")
+            files.add(rel)
+    result = frozenset(files)
+    _public_module_cache[module_id] = (stamp, time.time(), result)
+    return result
+
+
 @app.route("/api/public/assets/<path:relative_path>")
 def public_share_asset(relative_path):
     """Static files for the public share viewer, no session required.
@@ -14512,7 +14544,7 @@ def public_share_asset(relative_path):
     identity behind it, so it must never become a way to read arbitrary
     files - membership is checked against the exact set, which no amount of
     "../" can satisfy."""
-    if relative_path not in PUBLIC_SHARE_ASSETS:
+    if relative_path not in PUBLIC_SHARE_ASSETS and relative_path not in public_module_files("visualizer"):
         return "404 Not Found", 404
     resp = send_from_directory(WEB_FILES_DIR, relative_path)
     # Same revalidate-always policy as the rest of the app's code assets, so a
@@ -14677,6 +14709,8 @@ def _music_share_songs(share, token):
             "cover_url": ("/api/public/share/%s/music/cover?%s" % (token, q)) if cover else None,
             # dB to the common loudness, as the music page plays it (KSF-058).
             "gain": (gains.get(song["root"]) or {}).get(song["path"]) if song else None,
+            # for the visualizer, which picks its scenes by genre
+            "genre": (song.get("genre") or None) if song else None,
         })
     return out
 
