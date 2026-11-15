@@ -8,7 +8,7 @@
 (function () {
   'use strict';
   const KEY = 'atriVisualizer';
-  const DEFAULTS = { collection: 'genre', changes: 'auto', phrases: 2, scheme: 'auto', delay: 0, quality: 1, v: 2 };
+  const DEFAULTS = { collection: 'genre', changes: 'auto', phrases: 2, scheme: 'auto', delay: 0, quality: 1, fps: '0', v: 2 };
   let cfg = Object.assign({}, DEFAULTS);
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -41,6 +41,8 @@
 .avis-cap i:empty{display:none}
 .avis-scene{position:absolute;top:24px;left:24px;opacity:0;font-size:13px;letter-spacing:.04em;text-shadow:0 1px 8px rgba(0,0,0,.8);transition:opacity .6s}
 .avis-scene.show{opacity:.8}
+.avis-fps{position:absolute;top:12px;left:16px;font:600 12px/1 ui-monospace,Consolas,monospace;padding:4px 7px;border-radius:6px;background:rgba(10,12,24,.55);color:#e9ecf5;pointer-events:none}
+.avis.fps-on .avis-scene{top:44px}
 .avis-now{position:absolute;right:24px;bottom:24px;max-width:min(38vw,420px);text-align:right;font-size:12px;line-height:1.35;opacity:.7;text-shadow:0 1px 8px rgba(0,0,0,.8);transition:opacity .6s;user-select:text}
 .avis-now small{display:block;opacity:.7}
 .avis.idle .avis-now{opacity:.45}
@@ -75,6 +77,7 @@
     root.innerHTML = `
 <canvas></canvas>
 <div class="avis-scene"></div>
+<div class="avis-fps" hidden></div>
 <div class="avis-now" title="The scene on screen"></div>
 <div class="avis-cap"><img alt="" hidden><div><b></b><span></span><i class="avis-genre"></i></div></div>
 <div class="avis-bar">
@@ -90,10 +93,12 @@
   <label>Colours <select data-k="scheme">${opt('auto', 'From the cover', cfg.scheme)}${schemes.map((s) => opt(s, s[0].toUpperCase() + s.slice(1), cfg.scheme)).join('')}</select></label>
   <label>Delay <input type="range" data-k="delay" min="0" max="3000" step="10" value="${cfg.delay}"></label>
   <label>Quality <select data-k="quality">${opt('1', 'Full', cfg.quality)}${opt('0.75', 'Balanced', cfg.quality)}${opt('0.5', 'Light', cfg.quality)}</select></label>
+  <label>FPS display <select data-k="fps">${opt('0', 'Off', cfg.fps)}${opt('1', 'On (top left)', cfg.fps)}</select></label>
   <small class="avis-info"></small>
 </div>`;
     canvas = $('canvas');
     document.body.append(root);
+    showFps();
     root.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-a]');
       if (!b) return;
@@ -129,6 +134,7 @@
   function apply(k) {
     if (k === 'delay' && delay) delay.delayTime.setTargetAtTime(cfg.delay / 1000, delay.context.currentTime, 0.05);
     if (k === 'quality') size();
+    if (k === 'fps') showFps();
     if (k === 'changes' && conductor) conductor.setMode(cfg.changes);
     if (k === 'phrases' && conductor) conductor.setPhrases(phrases());
     if (k === 'collection') caption();
@@ -252,12 +258,30 @@
     const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; if (vis) vis.setRendererSize(w, h); }
   }
+  // frames per second, top left, when switched on in the settings (counted over half a second)
+  const fps = { n: 0, t0: 0 };
+  function showFps() {
+    const on = cfg.fps === '1';
+    root.classList.toggle('fps-on', on);
+    $('.avis-fps').hidden = !on;
+    fps.n = 0; fps.t0 = 0;
+  }
+  function countFps(t) {
+    if (cfg.fps !== '1') return;
+    if (!fps.t0) { fps.t0 = t; fps.n = 0; return; }
+    fps.n++;
+    if (t - fps.t0 >= 500) {
+      $('.avis-fps').textContent = Math.round(fps.n * 1000 / (t - fps.t0)) + ' fps' + (canvas ? ' · ' + canvas.width + '×' + canvas.height : '');
+      fps.t0 = t; fps.n = 0;
+    }
+  }
   function frame(t) {
     raf = requestAnimationFrame(frame);
     const dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0.016;
     lastT = t;
     if (feat && conductor) conductor.update(t / 1000, feat(t / 1000, dt));
     try { vis.render(); } catch (e) { console.warn('visualizer render', e); }
+    countFps(t);
     // a slow machine: after 3 s under 40 fps, render at three quarters of the size once
     perf.acc += dt; perf.n++;
     if (perf.acc >= 3) { if (perf.n / perf.acc < 40 && !perf.low) { perf.low = 1; size(); } perf.acc = 0; perf.n = 0; }
