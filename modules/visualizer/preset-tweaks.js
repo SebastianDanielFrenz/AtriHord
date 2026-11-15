@@ -82,6 +82,19 @@
       p.frame_eqs_str = must(p.frame_eqs_str, 'a.zoom=1.01;', 'a.zoom=1.01+.035*Math.max(0,a.bass-.9);a.rot=.015*(a.treb_att-1);');
       p.comp = tail(p.comp, '  ret *= 0.45 + 0.3 * clamp(bass_att, 0.0, 1.6) + 0.45 * clamp(bass, 0.0, 2.0);');
     },
+    // its 3D ribbon was meant to spin on peaks of the mids and highs, but kept that state in wave variables that
+    // Butterchurn resets every frame, and the brightness it read (q26) was never set: the frame equations now keep the
+    // spin (q27) and the bass level (q26); the picture zooms on the kick and the ribbon brightens with the bass
+    'Adam Eatit Mashup FX 2 martin - disco mix + Lodus + Geiss + Ludicrous speed + Baked Ft another AdamFX Mashup 7_1': (p) => {
+      p.init_eqs_str = (p.init_eqs_str || '') + 'a.vol_m=1;a.pulse=0;a.winkel=0;a.q26=0;a.q27=0;';
+      p.frame_eqs_str = (p.frame_eqs_str || '') +
+        'a.vol=a.mid_att+a.treb_att;a.vol_m=.99*a.vol_m+.01*a.vol;a.exc=above(a.vol,1.1*a.vol_m);a.pulse=.9*a.pulse+.1*a.exc;' +
+        'a.winkel+=.05*a.pulse+.01*a.bass_att;a.q27=a.winkel;a.q26=4*Math.min(2,a.bass_att);' +
+        'a.zoom=.99853+.035*Math.max(0,a.bass-.9);a.rot=.002+.012*(a.treb_att-1);';
+      const ribbon = (p.waves || [])[0];
+      ribbon.frame_eqs_str = must(ribbon.frame_eqs_str, 'a.winkel+=div(a.pulse,3);a.t3=a.winkel;', 'a.t3=a.q27;');
+      // (no comp shader of our own: Butterchurn's default one gives it its gamma and darkened centre)
+    },
     // looked the same with and without music: dim at rest, brightens and flashes with the bass, lights pulse with the
     // mids, and the camera sways a little on the beat
     'martin - crystal alley': (p) => {
