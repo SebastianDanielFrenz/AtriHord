@@ -6062,6 +6062,141 @@ def media_file():
 
     return send_media_file(file_path)
 
+class _ZipSink:
+    """The write-only, unseekable stream a streamed zip is written to: zipfile appends to it and the
+    generator hands out what has piled up, so nothing is kept (neither in memory nor on disk)."""
+    def __init__(self):
+        self.buf = bytearray()
+        self.pos = 0
+
+    def write(self, data):
+        self.buf += data
+        self.pos += len(data)
+        return len(data)
+
+    def tell(self):
+        return self.pos
+
+    def flush(self):
+        pass
+
+    def drain(self):
+        out = bytes(self.buf)
+        self.buf.clear()
+        return out
+
+
+def zip_selection_entries(picked):
+    """(archive name, absolute path or None, mtime) for what a multi-download holds. `picked` is
+    [(top name, absolute path, root real path)]. A folder keeps its structure under its own name; what
+    no listing shows (dot files, partial downloads, posters, screenshots) and any symlink pointing out of
+    the root is left out. A directory entry is written only for an empty folder (path None)."""
+    def inside(path, base):
+        real = os.path.realpath(path)
+        return real == base or real.startswith(base + os.sep)
+
+    for top, path, base in picked:
+        if os.path.isfile(path):
+            if not share_hidden_name(top) and inside(path, base):
+                yield top, path, os.path.getmtime(path)
+            continue
+        for cur, dirs, files in os.walk(path):
+            dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(cur, d)))
+            hidden = poster_companion_names(files)
+            rel = os.path.relpath(cur, path).replace(os.sep, "/")
+            prefix = top if rel == "." else top + "/" + rel
+            wrote = False
+            for f in sorted(files, key=str.lower):
+                full = os.path.join(cur, f)
+                if (_is_hidden_or_partial(f) or f in hidden or share_hidden_name(f)
+                        or not os.path.isfile(full) or not inside(full, base)):
+                    continue
+                try:
+                    mtime = os.path.getmtime(full)
+                except OSError:
+                    continue
+                wrote = True
+                yield prefix + "/" + f, full, mtime
+            if not wrote and not dirs:
+                yield prefix + "/", None, os.path.getmtime(cur)
+
+
+def stream_zip(entries):
+    """Yields a ZIP_STORED zip (zip64) of `entries` as it is written."""
+    sink = _ZipSink()
+    zf = zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED, allowZip64=True)
+    for arc, path, mtime in entries:
+        stamp = time.localtime(max(mtime, 315532800))[:6]
+        info = zipfile.ZipInfo(arc, date_time=stamp)
+        info.compress_type = zipfile.ZIP_STORED
+        if path is None:
+            info.external_attr = (0o40755 << 16) | 0x10
+            zf.writestr(info, b"")
+        else:
+            try:
+                src = open(path, "rb")
+            except OSError:
+                continue
+            info.external_attr = 0o644 << 16
+            with src, zf.open(info, "w", force_zip64=True) as dst:
+                while True:
+                    chunk = src.read(1 << 20)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+                    yield sink.drain()
+        out = sink.drain()
+        if out:
+            yield out
+    zf.close()
+    yield sink.drain()
+
+
+@app.route("/api/media/zip", methods=["GET", "POST"])
+def media_zip():
+    """One zip of several files and/or folders, streamed as it is built (no temp file, the download
+    starts at once). Body (JSON or a form field "items" holding JSON): items [{path, root}], name
+    (optional: the folder the selection was made in). Guests may use it for roots they can see."""
+    user = get_authenticated_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    raw_items = data.get("items")
+    name = data.get("name")
+    if raw_items is None:
+        try:
+            raw_items = json.loads(request.values.get("items") or "[]")
+        except ValueError:
+            raw_items = None
+        name = request.values.get("name")
+    checked = share_pool_items_checked(user, raw_items)
+    if checked[1]:
+        return jsonify({"error": checked[1][0]}), checked[1][1]
+    items = checked[0]
+    if not items:
+        return jsonify({"error": "items is required"}), 400
+    picked, used = [], set()
+    for it in items:
+        base = os.path.realpath(get_root(it["root"])["path"])
+        top = it["path"].rsplit("/", 1)[-1] or it["root"]
+        stem, ext = os.path.splitext(top)
+        n = 1
+        while top.lower() in used:
+            n += 1
+            top = f"{stem} ({n}){ext}"
+        used.add(top.lower())
+        picked.append((top, _resolve_downloads_subpath(it["path"], it["root"]), base))
+    if len(items) == 1 and items[0]["kind"] == "folder":
+        label = picked[0][0]
+    else:
+        label = (str(name or "").strip().replace("\\", "/").rsplit("/", 1)[-1] or "media") + "-selection"
+    label = "".join(c for c in label if c >= " " and c not in '<>:"|?*').strip(" .") or "selection"
+    resp = Response(stream_zip(zip_selection_entries(picked)), mimetype="application/zip")
+    resp.headers.set("Content-Disposition", "attachment", filename=label + ".zip")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
 # Full-library index for search. Deliberately just (root_id, rel_path)
 # string pairs - NOT entry dicts. This library runs to ~300k files, where
 # building a dict-per-file (with its long percent-encoded URL) cost ~1.5GB
@@ -13600,6 +13735,34 @@ def create_share():
 
     return jsonify(share_summary(share))
 
+MAX_POOL_ITEMS_AT_ONCE = 5000
+
+def share_pool_items_checked(user, raw_items):
+    """Validates [{path, root}] for a new pool the way add_share_pool_item validates one item.
+    Returns (items, None) with items [{path, kind, root}] without duplicates, or (None, (message, status))."""
+    if not isinstance(raw_items, list) or len(raw_items) > MAX_POOL_ITEMS_AT_ONCE:
+        return None, ("items must be a list", 400)
+    items = []
+    for raw in raw_items:
+        raw = raw if isinstance(raw, dict) else {}
+        rel_path = str(raw.get("path") or "").strip("/").replace("\\", "/")
+        root_id = str(raw.get("root") or DEFAULT_ROOT_ID).strip()
+        if not rel_path:
+            return None, ("path is required", 400)
+        if not root_visible_to(user, root_id):
+            return None, ("Forbidden", 403)
+        target = _resolve_downloads_subpath(rel_path, root_id)
+        if not target:
+            return None, ("Invalid path", 400)
+        if not os.path.exists(target):
+            return None, ("Not found", 404)
+        kind = "folder" if os.path.isdir(target) else "file"
+        if kind == "file" and share_hidden_name(rel_path):
+            return None, ("Screenshots are not shared", 400)
+        if not any(i["path"] == rel_path and i["root"] == root_id for i in items):
+            items.append({"path": rel_path, "kind": kind, "root": root_id})
+    return items, None
+
 @app.route("/api/share/pool", methods=["POST"])
 def create_share_pool():
     """Creates an empty pool share. Items are added afterward via
@@ -13611,11 +13774,21 @@ def create_share_pool():
     data = request.get_json(silent=True) or {}
     label = (data.get("label") or "").strip()
 
+    # Optional "items": [{path, root}] makes the pool and fills it in one write (a multi-selection
+    # share); each item is checked as add_share_pool_item checks one, and one bad item refuses all.
+    items = []
+    raw_items = data.get("items")
+    if raw_items is not None:
+        checked = share_pool_items_checked(user, raw_items)
+        if checked[1]:
+            return jsonify({"error": checked[1][0]}), checked[1][1]
+        items = checked[0]
+
     share = {
         "id": secrets.token_urlsafe(24),
         "kind": "pool",
         "label": label,
-        "items": [],
+        "items": items,
         "created_by": user["username"],
         "created_at": time.time(),
         "expires_at": default_share_expiry(),

@@ -33,8 +33,6 @@
   const TILE_SEL = GRID_IDS.map((id) => `#${id} .media-tile[data-path]`).join(", ");
   const $ = (id) => document.getElementById(id);
 
-  const DOWNLOAD_CAP = 20;          // no zip API: files go one after another, so there is a ceiling
-  const DOWNLOAD_GAP_MS = 450;      // a browser asks before it lets a page start many downloads at once
   const LONG_PRESS_MS = 450;
   const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12.5l3.8 3.8 7.2-7.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -224,7 +222,8 @@
     fav.setAttribute("aria-label", fav.dataset.tip);
     fav.disabled = busy || !files.length;
     $("nxSelPool").disabled = busy;
-    $("nxSelDownload").disabled = busy || !files.length;
+    $("nxSelDownload").disabled = busy;
+    $("nxSelShare").disabled = busy;
     const convertible = window.Stereo3d ? files.filter((i) => Stereo3d.canConvert(i)).length : 0;
     $("nxSel3d").disabled = busy || !convertible;
     $("nxSelDelete").disabled = busy;
@@ -287,25 +286,71 @@
     a.remove();
   }
 
+  // The folder the selection was made in, for the zip's and the pool's name.
+  function currentFolderName() {
+    try { return (currentMediaPath || "").split("/").filter(Boolean).pop() || ""; } catch (e) { return ""; }
+  }
+
+  // One file: the direct download. Several files, or any folder: ONE zip, streamed by the server
+  // (POST /api/media/zip) and started by a hidden form so the browser saves it like any download.
   async function bulkDownload() {
-    const files = selectedItems().filter((i) => i.kind !== "folder");
-    const folders = selected.size - files.length;
-    if (!files.length || busy) return;
-    const batch = files.slice(0, DOWNLOAD_CAP);
-    let msg;
-    if (files.length > DOWNLOAD_CAP) {
-      msg = `Downloading the first ${DOWNLOAD_CAP} of ${files.length} files: there is no zip, so at most ${DOWNLOAD_CAP} start at once. ${files.length - DOWNLOAD_CAP} were left out - select them again for the next go.`;
-    } else {
-      msg = `Downloading ${plural(batch.length, "file")} one after another`;
-      if (batch.length > 1) msg += " (your browser may ask to allow multiple downloads)";
+    const items = selectedItems();
+    if (!items.length || busy) return;
+    if (items.length === 1 && items[0].kind !== "folder") {
+      startDownload(items[0], entryIndex());
+      return;
     }
-    if (folders) msg += ` ${plural(folders, "folder")} skipped: a folder cannot be downloaded.`;
-    toast(msg);
+    let frame = $("nxZipFrame");
+    if (!frame) {
+      frame = document.createElement("iframe");
+      frame.id = "nxZipFrame";
+      frame.name = "nxZipFrame";
+      frame.hidden = true;
+      document.body.appendChild(frame);
+    }
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/api/media/zip";
+    form.target = "nxZipFrame";
+    form.hidden = true;
+    const add = (name, value) => {
+      const f = document.createElement("input");
+      f.type = "hidden"; f.name = name; f.value = value;
+      form.appendChild(f);
+    };
+    add("items", JSON.stringify(items.map((i) => ({ path: i.path, root: i.root || currentRoot() }))));
+    add("name", currentFolderName());
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+    toast(`Zip of ${plural(items.length, "item")} is starting - it downloads as it is packed`);
+  }
+
+  // One item: the single share (as "Share" in the context menu). Several: one pool made with all of
+  // them in one call. Either way the public link goes to the clipboard and into the toast.
+  async function bulkShare() {
+    const items = selectedItems();
+    if (!items.length || busy) return;
     setBusy(true);
-    const idx = entryIndex();
-    for (let i = 0; i < batch.length; i++) {
-      startDownload(batch[i], idx);
-      if (i < batch.length - 1) await sleep(DOWNLOAD_GAP_MS);
+    try {
+      let share;
+      if (items.length === 1) {
+        share = await postJson("/api/share", { path: items[0].path, root: items[0].root || currentRoot() });
+      } else {
+        const folder = currentFolderName();
+        share = await postJson("/api/share/pool", {
+          label: folder ? `${folder} selection` : "Selection",
+          items: items.map((i) => ({ path: i.path, root: i.root || currentRoot() })),
+        });
+      }
+      const link = window.location.origin + share.url;
+      let copied = false;
+      try { await navigator.clipboard.writeText(link); copied = true; } catch (e) { /* insecure context: the toast shows it */ }
+      if (typeof loadShares === "function") loadShares();
+      toast(copied ? `Link copied: ${link}` : `Public link: ${link}`);
+      clearSelection();
+    } catch (e) {
+      toast(`Could not share: ${e.message}`);
     }
     setBusy(false);
   }
@@ -745,6 +790,7 @@
     $("nxSelFav").addEventListener("click", bulkFavorite);
     $("nxSelPool").addEventListener("click", bulkToPool);
     $("nxSelDownload").addEventListener("click", bulkDownload);
+    $("nxSelShare").addEventListener("click", bulkShare);
     $("nxSel3d").addEventListener("click", bulkConvert3d);
     $("nxSelDelete").addEventListener("click", () => openDeleteDialog(selectedItems(), null));
     const mode = $("selectModeBtn");
