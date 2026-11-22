@@ -65,6 +65,12 @@ import threading
 import time
 
 VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".flv", ".ts", ".mpg", ".mpeg"}
+# The music library links a song's audio files to its music video (same upload). When a video is cut, those audio files
+# lose the same seconds (user, 2026-11-13: "The cutter SHOULD cut the corresponding audio files" - "if it has linked a
+# video and an audio file, cut the audio file"). Only a file the library has linked, and only when it is as long as the
+# video was: another length means another cut (an intro already removed by hand) and is left alone.
+AUDIO_EXTS = {".opus", ".mka", ".m4a", ".mp3", ".flac", ".ogg", ".oga", ".wav", ".aac", ".weba"}
+TWIN_LENGTH_TOLERANCE_S = 1.0
 ORIGINALS_DIR = ".cut_originals"
 WORK_DIR = ".work"                 # inside ORIGINALS_DIR: temp results of a cut
 PREVIEW_FRAMES = 4
@@ -395,7 +401,7 @@ class FingerprintStore:
 
 class VideoTrim:
     def __init__(self, base_dir, cfg_fn, busy_fn, roots_fn, invalidate_fn, log=print,
-                 state_name="video_trim.json", on_cut=None):
+                 state_name="video_trim.json", on_cut=None, audio_twins=None):
         self.base_dir = base_dir
         self.cfg = lambda: merged_settings(cfg_fn())
         self.busy = busy_fn
@@ -403,6 +409,7 @@ class VideoTrim:
         self.invalidate = invalidate_fn
         self.log = log
         self.on_cut = on_cut
+        self.audio_twins = audio_twins        # (root, rel of a video) -> [(root, rel) of the audio files linked to it]
         self.state_file = os.path.join(base_dir, state_name)
         shared = os.environ.get("MEDIA_CACHE_DIR", "").strip()
         self.cache_dir = (os.path.join(os.path.expanduser(shared), "video_trim") if shared
@@ -488,6 +495,21 @@ class VideoTrim:
         original back, so a half-written video never stays."""
         changed = False
         for sig in self.state["signatures"].values():
+            for m in sig["members"].values():
+                for t in m.get("twins", []):
+                    if t.get("state") != "committing":
+                        continue
+                    tfull, tbak = self._full(t["root"], t["rel"]), t.get("backup")
+                    if tfull and tbak and os.path.exists(tbak):
+                        try:
+                            self._copy_into(tbak, tfull)
+                            os.utime(tfull, None)
+                            t.update(state="error", note="interrupted by a restart - the original was put back")
+                        except OSError as exc:
+                            t.update(state="error", note=f"interrupted by a restart and not restored: {exc}")
+                    else:
+                        t.update(state="error", note="interrupted by a restart; no kept original to restore from")
+                    changed = True
             for rel, m in sig["members"].items():
                 if m.get("state") != "committing":
                     continue
@@ -1032,7 +1054,12 @@ class VideoTrim:
     def _decodes(self, path, seek_args):
         res = self._run(["ffmpeg", "-nostdin", "-v", "error", "-threads", "2"] + seek_args +
                         ["-i", path, "-f", "null", "-"], timeout=600)
-        return res.returncode == 0 and not res.stderr.strip(), res.stderr.decode("utf-8", "replace").strip()[:200]
+        # The null muxer warns about repeated dts at the start of a stream-copied
+        # VP9 .webm cut ("non monotonically increasing dts ... 3 >= 3"): a
+        # timestamp note, not a decode failure (ATRI-6). Real errors still count.
+        errs = [line for line in res.stderr.decode("utf-8", "replace").splitlines()
+                if line.strip() and "non monotonically increasing dts" not in line]
+        return res.returncode == 0 and not errs, "\n".join(errs)[:200]
 
     def _cut_one(self, sig, rel, m, cfg):
         """Cuts one member. Returns (state, note). Never touches the file unless
@@ -1108,6 +1135,7 @@ class VideoTrim:
                 ok, msg = self._decodes(tmp, ["-sseof", "-5"])
             if not ok:
                 return "error", "the result does not decode cleanly: " + msg
+            m.update(cut_kind=sig["kind"], cut_removed=removed_seconds, orig_duration=d)
             return self._commit(sig, rel, m, full, st, tmp, cfg)
         finally:
             try:
@@ -1147,7 +1175,158 @@ class VideoTrim:
         if sig.get("auto_delete"):
             self._drop_backup(m)
         self._notify_cut(sig["root"], rel, st, new)
+        try:
+            self._cut_twins(sig, rel, m)
+        except Exception as exc:                    # the video is cut and committed; the audio is a courtesy
+            self.log(f"[trim] {sig['id']} {rel}: audio files: {type(exc).__name__}: {exc}")
         return "cut", ""
+
+    def _cut_twins(self, sig, vrel, m):
+        """The audio files the music library links to this video lose the same seconds."""
+        if not self.audio_twins or not m.get("orig_duration") or not m.get("cut_removed"):
+            return
+        found = list(self.audio_twins(sig["root"], vrel) or [])
+        done = {(t["root"], t["rel"]) for t in m.get("twins", []) if t.get("state") in ("cut", "committing")}
+        for root, rel in found:
+            if (root, rel) in done or (root, rel) == (sig["root"], vrel):
+                continue
+            if os.path.splitext(rel)[1].lower() not in AUDIO_EXTS:
+                continue
+            twin = {"root": root, "rel": rel, "state": "pending", "note": ""}
+            m.setdefault("twins", []).append(twin)         # listed before anything is written: a restart can find it
+            try:
+                state, note = self._cut_twin(sig, m, root, rel, twin)
+            except Exception as exc:
+                state, note = "error", f"{type(exc).__name__}: {exc}"
+            with self.lock:
+                twin.update(state=state, note=note)
+                self._save()
+            self.log(f"[trim] {sig['id']} audio {root}:{rel}: {state} {note}")
+
+    def _cut_twin(self, sig, m, root, rel, twin):
+        full = self._full(root, rel)
+        if not full or not os.path.isfile(full):
+            return "skipped", "the file is gone"
+        st = os.stat(full)
+        if (st.st_dev, st.st_ino) == (m.get("dev"), m.get("ino")):
+            return "skipped", "the same file as the video"
+        info = self.probe(full)
+        if not info or not any(k == "audio" for k, _c in info["streams"]):
+            return "skipped", "ffprobe found no audio in it"
+        d = info["duration"]
+        if abs(d - m["orig_duration"]) > TWIN_LENGTH_TOLERANCE_S:
+            return "skipped", (f"it is {d:.1f}s long and the video was {m['orig_duration']:.1f}s: "
+                               "not the same cut, left alone")
+        removed = m["cut_removed"]
+        expected = d - removed
+        if sig["kind"] == "intro":
+            seek, tail = ["-ss", f"{removed:.6f}"], []
+        else:
+            seek, tail = [], ["-t", f"{expected:.3f}"]
+        if expected < 0.55 * d or expected < 1.0:
+            return "skipped", "the cut would remove more than 45% of the audio"
+        cfg = self.cfg()
+        root_path = self._root_path(root)
+        work = os.path.join(root_path, ORIGINALS_DIR, WORK_DIR)
+        os.makedirs(work, exist_ok=True)
+        if shutil.disk_usage(root_path).free < 2 * st.st_size + cfg["min_free_gb"] * 1e9:
+            return "queued", "waiting for disk space"
+        ext = os.path.splitext(full)[1].lower()
+        tmp = os.path.join(work, f"{sig['id']}_a_{hashlib.sha1((root + rel).encode()).hexdigest()[:10]}{ext}")
+        try:
+            # An Ogg/Opus file keeps its cover in a tag (METADATA_BLOCK_PICTURE); ffmpeg shows it as a video stream it
+            # cannot write back. So only the audio is copied and the tags - the cover with them - are put back by mutagen.
+            ogg = ext in (".opus", ".ogg", ".oga")
+            maps = ["-map", "0:a"] if ogg else ["-map", "0"]
+            res = self._run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", full] + seek + maps + [
+                "-c", "copy", "-map_metadata", "0", "-map_chapters", "0",
+                "-avoid_negative_ts", "make_zero"] + tail + [tmp], timeout=1800)
+            if res.returncode != 0 or not os.path.exists(tmp):
+                lines = res.stderr.decode("utf-8", "replace").strip().splitlines()
+                return "skipped", "ffmpeg could not copy it: " + (lines[-1][:160] if lines else "unknown")
+            if ogg:
+                try:
+                    from mutagen.oggopus import OggOpus
+                    from mutagen.oggvorbis import OggVorbis
+                    kind = OggOpus if ext == ".opus" else OggVorbis
+                    src_tags = kind(full).tags
+                    dst = kind(tmp)
+                    dst.tags.clear()
+                    for key in src_tags.keys():
+                        dst.tags[key] = src_tags[key]
+                    dst.save()
+                except Exception as exc:
+                    return "skipped", f"its tags could not be carried over ({type(exc).__name__}): left alone"
+            out = self.probe(tmp)
+            if not out:
+                return "error", "the result is not readable"
+            if abs(out["duration"] - expected) > 0.5:
+                return "error", f"the result is {out['duration']:.1f}s, expected {expected:.1f}s"
+            kinds = ("video", "audio", "subtitle")
+            if sorted(x for x in info["streams"] if x[0] in kinds) != sorted(x for x in out["streams"] if x[0] in kinds):
+                return "skipped", "a stream would be lost (cover or tracks): left alone"
+            ok, msg = self._decodes(tmp, ["-t", "5"])
+            if ok:
+                ok, msg = self._decodes(tmp, ["-sseof", "-5"])
+            if not ok:
+                return "error", "the result does not decode cleanly: " + msg
+            bak = os.path.join(root_path, ORIGINALS_DIR, sig["id"], rel)
+            os.makedirs(os.path.dirname(bak), exist_ok=True)
+            shutil.copyfile(full, bak)
+            if os.path.getsize(bak) != st.st_size:
+                os.remove(bak)
+                return "error", "the copy of the original is incomplete"
+            with self.lock:
+                twin.update(state="committing", backup=bak, orig_size=st.st_size)
+                self._save()
+            try:
+                self._copy_into(tmp, full)
+                if not self._same_bytes(tmp, full):
+                    raise OSError("read-back differs")
+                os.utime(full, None)
+            except Exception as exc:
+                try:
+                    self._copy_into(bak, full)
+                    os.utime(full, None)
+                    note = f"writing failed ({exc}); the original was put back"
+                except OSError as exc2:
+                    note = f"writing failed ({exc}) and the restore failed ({exc2}); the original is in {bak}"
+                return "error", note
+            new = os.stat(full)
+            twin.update(post_size=new.st_size, post_mtime_ns=new.st_mtime_ns, cut_at=time.time(), orig_kept=True)
+            if sig.get("auto_delete"):
+                self._drop_backup(twin)
+            return "cut", f"{removed:.2f}s {'from the start' if sig['kind'] == 'intro' else 'from the end'}"
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+    def _undo_twins(self, m):
+        n = 0
+        for t in m.get("twins", []):
+            if t.get("state") != "cut" or not t.get("orig_kept"):
+                continue
+            full = self._full(t["root"], t["rel"])
+            try:
+                st = os.stat(full)
+            except (OSError, TypeError):
+                t["note"] = "the file is gone"
+                continue
+            if (st.st_size, st.st_mtime_ns) != (t.get("post_size"), t.get("post_mtime_ns")):
+                t["note"] = "the file changed after the cut - not restored"
+                continue
+            try:
+                self._copy_into(t["backup"], full)
+                os.utime(full, None)
+            except OSError as exc:
+                t["note"] = f"restore failed: {exc}"
+                continue
+            self._drop_backup(t)
+            t.update(state="undone", note="restored")
+            n += 1
+        return n
 
     def _after_cut(self, sig, rel, m):
         """The file now has new bytes: another signature waiting on the same
@@ -1290,6 +1469,7 @@ class VideoTrim:
             self._drop_backup(m)
             m.update(state="undone", note="restored")
             restored += 1
+            self._undo_twins(m)
             back = os.stat(full)
             self._after_undo(m, back)
             self._notify_cut(sig["root"], rel, st, back)
@@ -1310,6 +1490,10 @@ class VideoTrim:
             if m["state"] == "cut" and m.get("orig_kept"):
                 self._drop_backup(m)
                 deleted += 1
+            for t in m.get("twins", []):
+                if t.get("state") == "cut" and t.get("orig_kept"):
+                    self._drop_backup(t)
+                    deleted += 1
         with self.lock:
             self._save()
         return {"deleted": deleted}

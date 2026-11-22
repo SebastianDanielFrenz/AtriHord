@@ -15820,9 +15820,42 @@ def video_trim_redo_status():
     return {"stereo3d": s3d, "interp": _interp_redo.status()}
 
 
+# The audio files the music library has linked to a music video (same upload: the video id, or the same name beside it).
+# video_trim.py cuts them with the video (user, 2026-11-13: "The cutter SHOULD cut the corresponding audio files" -
+# "if it has linked a video and an audio file, cut the audio file"). Read from the catalogue as it stands; nothing here
+# starts a build - except when there is none at all yet, which is started and waited for (up to two minutes).
+_trim_twin_cache = {"catalog": None, "map": {}}
+
+
+def video_trim_audio_twins(root_id, rel_path):
+    with _music_lock:
+        catalog = _music.get("catalog")
+    if not catalog:                         # not built yet (nobody has opened the music page): start it and wait for it
+        try:
+            music_catalog()
+        except Exception:
+            pass
+        for _ in range(60):
+            time.sleep(2)
+            with _music_lock:
+                catalog = _music.get("catalog")
+            if catalog:
+                break
+    if not catalog:
+        return []
+    if _trim_twin_cache["catalog"] is not catalog:
+        table = {}
+        for song in catalog.get("songs", []):
+            names = [(r, p) for r, p in song.get("names", [])]
+            for v in song.get("videos") or []:
+                table.setdefault((v[0], v[1]), []).extend(names)
+        _trim_twin_cache.update(catalog=catalog, map=table)
+    return list(_trim_twin_cache["map"].get((root_id, rel_path), []))
+
+
 _video_trim = video_trim.VideoTrim(
     BASE_DIR, video_trim_settings, downloads_busy, video_trim_roots, invalidate_media_caches,
-    log=lambda text: print(text, flush=True), on_cut=video_trim_on_cut)
+    log=lambda text: print(text, flush=True), on_cut=video_trim_on_cut, audio_twins=video_trim_audio_twins)
 
 
 @app.route("/api/media/trim", methods=["GET"])
