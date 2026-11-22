@@ -540,6 +540,20 @@
   const audio = $('muAudio');
   const videoEl = $('muStageVideo');
   let mediaEl = audio;
+  // Who paused the music? A script's pause() is recorded with its caller (window.__ksfPauses, and the bridge log while it is
+  // on); a pause with no such record came from outside the page: the browser, the OS or a media key.
+  for (const m of [audio, videoEl]) {
+    const orig = m.pause.bind(m);
+    m.pause = function () {
+      if (!m.paused) {
+        const st = (new Error().stack || '').split(String.fromCharCode(10)).slice(2, 6).map((x) => x.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+/, '')).join(' < ');
+        (window.__ksfPauses = window.__ksfPauses || []).push([new Date().toISOString(), st]);
+        if (window.__ksfPauses.length > 30) window.__ksfPauses.shift();
+        try { DG.add('pause-call', { st }); } catch (e) { /* diagnostics not ready */ }
+      }
+      return orig();
+    };
+  }
 
   // From media-dl's player.js. A frame-interpolated video plays a stream
   // whose currentTime starts wherever it was asked for, and it carries
@@ -976,8 +990,22 @@
       .catch(() => {});
   })();
 
+  // Dynamic mode state (see the block after setHeights): defined early, the bridge messages read it.
+  // Hidden unless switched on: ?dynamic=1 in the address sets a cookie (a year), ?dynamic=0 removes it.
+  const DYN_FLAG = (() => {
+    try {
+      const q = new URLSearchParams(location.search).get('dynamic');
+      if (q === '1') document.cookie = 'ksf_dynamic=1; max-age=31536000; path=/; SameSite=Lax';
+      else if (q === '0') document.cookie = 'ksf_dynamic=; max-age=0; path=/';
+      return q === '1' || (q !== '0' && /(?:^|; )ksf_dynamic=1/.test(document.cookie));
+    } catch (e) { return false; }
+  })();
+  const DYN = { on: DYN_FLAG && store('dynamic') === true, I: 0, g: { side: 1, back: 1, top: 1 }, iv: 0, url: '', curve: null, job: 0 };
   const BRIDGE_URL = 'ws://127.0.0.1:47321/';
-  const BR = { ws: null, node: null, silent: null, info: null, retry: 0, loading: false };
+  // idle: the page does not open the app until something here plays or the output/heights buttons are touched. The app serves
+  // one client and the newest wins, so a page that merely opened used to take it from YouTube (upmixed by the browser
+  // extension), which then paused (user, 2026-11-12).
+  const BR = { ws: null, node: null, silent: null, info: null, retry: 0, loading: false, stopped: true, idle: true };
   const TAP_CODE = `class AhTap extends AudioWorkletProcessor {
     constructor() { super(); this.b = new Float32Array(2048); this.n = 0; }
     process(inputs, outputs) {
@@ -999,13 +1027,14 @@
   }
 
   function bridgeSettings() {
-    bridgeSend({ type: 'mode', mode: UP.mode, heights: UP.heights, rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000 });
+    bridgeSend({ type: 'mode', mode: UP.mode, heights: UP.heights, dynamic: DYN.on && UP.mode === 'all', rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000 });
   }
 
   // Tries every 3 s for 30 s; then it stops until the user touches the output or heights switch (bridgeKick).
   const BRIDGE_TRY_MS = 3000, BRIDGE_WINDOW_MS = 30000;
   function bridgeKick() {
     if (!BR.stopped || BR.ws) return;
+    BR.idle = false;
     BR.stopped = false;
     BR.windowStart = Date.now();
     if (BR.yielded) bridgeClaim();
@@ -1066,6 +1095,28 @@
     return false;
   }
 
+  // Passive probe (app 1.2.7+): ws://.../probe answers with the device info and closes, and never takes the app from
+  // the page or extension that is playing. Only tried once a connection has shown the app is that new (older ones treat
+  // every connection as a takeover). It fills the output button before anything plays.
+  function bridgeProbe() {
+    if (IOS || !('WebSocket' in window) || !BR.idle) return;
+    let v = '';
+    try { v = localStorage.getItem('ksfBridgeVer') || ''; } catch (e) { /* no storage */ }
+    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v);
+    if (!m || !(+m[1] > 1 || +m[2] > 2 || (+m[2] === 2 && +m[3] >= 7))) return;
+    try {
+      const ws = new WebSocket(BRIDGE_URL + 'probe');
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'info' && BR.idle) { BR.probe = msg; renderSurround(); }
+        } catch (e) { /* not json */ }
+        try { ws.close(); } catch (e) { /* done */ }
+      };
+      ws.onerror = () => {};
+    } catch (e) { /* cannot open */ }
+  }
+
   function bridgeConnect() {
     if (BR.ws || BR.stopped || IOS || !('WebSocket' in window)) return;
     if (BR.holdOff && Date.now() < BR.holdOff) return;      // just lost it: the retry timer decides, not a rebuild
@@ -1082,7 +1133,7 @@
       rlog('bridge: socket open');
       if (BR.state !== 'connected') console.info('Bridge connected at ' + BRIDGE_URL);
       BR.state = 'connected';
-      bridgeSend({ type: 'hello', rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000, mode: UP.mode, heights: UP.heights });
+      bridgeSend({ type: 'hello', rate: LOUD.ctx ? LOUD.ctx.sampleRate : 48000, mode: UP.mode, heights: UP.heights, dynamic: DYN.on && UP.mode === 'all' });
     };
     ws.onmessage = (ev) => {
       if (typeof ev.data !== 'string') return;
@@ -1093,6 +1144,7 @@
       if (msg.type === 'info') {
         rlog('bridge: info', { bed: msg.bed, heights: msg.heights });
         BR.info = msg;
+        try { localStorage.setItem('ksfBridgeVer', String(msg.version || '')); } catch (e) { /* no storage */ }
         // (a rebuild is a short mute and reconnect: not when the bridge route already stands, as two of them in a row
         // were an audible gap)
         bridgeEnsureTap().then(() => { if (LOUD.ctx && UP.input && !UP.viaBridge) buildUpmix(); else renderSurround(); });
@@ -1168,6 +1220,16 @@
       BR.silent = LOUD.ctx.createGain();       // keeps the worklet pulled without making a sound
       BR.silent.gain.value = 0;
       node.connect(BR.silent).connect(LOUD.ctx.destination);
+      // An output that is exactly silent lets Chrome drop the real audio device for a timer-driven stand-in, and in a hidden
+      // tab (the browser covered by a game) that timer is throttled: the context then renders at about 65 % of real time
+      // and the app is starved (bridge log 2026-11-13: 31 223 frames/s, "clock lagged", an underrun every 100 ms). A
+      // constant a billion times quieter than anything audible keeps the real device running, and changes no sound.
+      try {
+        BR.keep = LOUD.ctx.createConstantSource();
+        BR.keep.offset.value = 1e-9;
+        BR.keep.connect(LOUD.ctx.destination);
+        BR.keep.start();
+      } catch (e) { /* the page still works, only without the guard */ }
       BR.node = node;
       rlog('bridge: tap ready');
       console.info('Bridge tap ready in ' + Math.round(performance.now() - t0) + ' ms (audio context was ' + state0 + ')');
@@ -1190,6 +1252,7 @@
     } catch (e) { /* no audio output at all */ }
     renderSurround();
     bridgeConnect();
+    bridgeProbe();
   }
 
   // Where both elements' gains go: a stereo bus the matrix reads from.
@@ -1342,28 +1405,69 @@
   }
 
   // The output button (stereo <-> all ear-level) and the Heights switch, in the player bar.
+  // ---- settings per output device (kept in this browser's localStorage only, never on the server) ------------------
+  // The device is the one the companion app reports (the Windows default output) or, without the app, the browser's output
+  // channel count. When it changes, its own saved mode / heights / dynamic come back. A device the app reports that has
+  // never been set up starts as Stereo (it may be plain headphones); the switches the user then changes are remembered.
+  let curDevKey = '';
+  function deviceKey() {
+    if (BR.info && BR.info.device) return 'app:' + BR.info.device;
+    if (BR.idle && BR.probe && BR.probe.device) return 'app:' + BR.probe.device;
+    return UP.probed ? 'browser:' + UP.probed : '';
+  }
+  function saveDevPrefs() {
+    const k = deviceKey();
+    if (!k) return;
+    const all = store('devprefs') || {};
+    all[k] = { mode: UP.mode, heights: UP.heights, dynamic: DYN.on };
+    store('devprefs', all);
+  }
+  function applyDevPrefs() {
+    const k = deviceKey();
+    if (!k || k === curDevKey) return;
+    curDevKey = k;
+    const rec = (store('devprefs') || {})[k];
+    if (!rec && !k.startsWith('app:')) return;             // an unseen browser output keeps the current switches
+    UP.mode = rec ? (rec.mode === 'stereo' ? 'stereo' : 'all') : 'stereo';
+    UP.heights = rec ? !!rec.heights : false;
+    DYN.on = DYN_FLAG && !!(rec && rec.dynamic);
+    store('upmode', UP.mode); store('heights', UP.heights); store('dynamic', DYN.on);
+    if (LOUD.ctx && UP.input) buildUpmix();
+    bridgeSettings();
+  }
+
   function renderSurround() {
+    applyDevPrefs();
     const chip = $('muSurround');
     const btn = $('muHeights');
+    const dbtn = $('muDynamic');
     if (!chip || !btn) return;
     // The app counts as there as soon as it has answered: its tap needs the audio engine, which only exists once
     // something has played, but the switches should not wait for that.
     const viaApp = !!(BR.ws && BR.ws.readyState === 1 && BR.info);
+    const pinfo = !viaApp && BR.idle && BR.probe ? BR.probe : null;      // the app answered a passive probe: shown, not connected
     const routed = LOUD.ctx && UP.input;
-    const lay = viaApp ? null : (routed ? UP.layout : (SURROUND[UP.probed] || null));
-    const multi = viaApp || !!lay;
+    const lay = viaApp || pinfo ? null : (routed ? UP.layout : (SURROUND[UP.probed] || null));
+    const multi = viaApp || !!pinfo || !!lay;
     chip.hidden = false;
     btn.hidden = false;
-    const name = viaApp ? (BR.info.bed ? playedName(BR.info.bed, UP.heights) : 'Spatial') : lay ? playedName(lay.name, UP.heights) : '';
+    const name = viaApp ? (BR.info.bed ? playedName(BR.info.bed, UP.heights || DYN.on) : 'Spatial') : pinfo ? (pinfo.bed ? playedName(pinfo.bed, UP.heights || DYN.on) : 'Spatial') : lay ? playedName(lay.name, UP.heights) : '';
     chip.disabled = !multi;
     chip.setAttribute('aria-pressed', String(multi && UP.mode === 'all'));
     chip.textContent = !multi ? (UP.probed === 1 ? 'Mono' : 'Stereo') : (UP.mode === 'all' ? name : 'Stereo');
-    chip.title = viaApp ? `Playing through the companion app (${BR.info.device || 'Windows Spatial Sound'}). Click: ${UP.mode === 'all' ? 'front pair only' : 'every ear-level speaker'}`
+    chip.title = pinfo ? `Companion app found (${pinfo.device || 'Windows Spatial Sound'}); it connects when you press play. Click: ${UP.mode === 'all' ? 'front pair only' : 'every ear-level speaker'}`
+      : viaApp ? `Playing through the companion app (${BR.info.device || 'Windows Spatial Sound'}). Click: ${UP.mode === 'all' ? 'front pair only' : 'every ear-level speaker'}`
       : lay ? `Output: ${playedName(lay.name, UP.heights)}. Click: ${UP.mode === 'all' ? 'stereo, the front pair only' : 'every ear-level speaker, at the same level'}`
         : IOS || LOUD.off ? 'This browser plays stereo only'
           : 'Output: stereo - the music plays as it is';
-    const can = viaApp ? !!BR.info.heights : !!lay && lay.tops.length > 0;
-    btn.disabled = !can || UP.mode !== 'all';
+    const can = viaApp ? !!BR.info.heights : pinfo ? !!pinfo.heights : !!lay && lay.tops.length > 0;
+    btn.disabled = !can || UP.mode !== 'all' || (DYN.on && viaApp);
+    if (dbtn) {
+      dbtn.hidden = !DYN_FLAG;
+      dbtn.disabled = !(viaApp || pinfo) || UP.mode !== 'all' || !can;
+      dbtn.setAttribute('aria-pressed', String(DYN.on && UP.mode === 'all'));
+    }
+    if (DYN_FLAG && DYN.on && viaApp && UP.mode === 'all') startDyn(); else stopDyn();
     btn.setAttribute('aria-pressed', String(UP.heights));
     btn.title = can ? (UP.heights ? 'Height speakers on' : 'Height speakers off')
       : multi ? 'The browser gets no height channels from Windows - run the companion app (the Spatial app link in the top bar) to reach them'
@@ -1375,15 +1479,108 @@
     const before = { n: speakerCount(), vol: userVolume };
     UP.heights = !!on;
     store('heights', UP.heights);
+    saveDevPrefs();
     buildUpmix(before);
     renderSurround();                  // the name follows the switch at once, also before anything plays
     toast(UP.heights ? 'Height speakers on' : 'Height speakers off');
+  }
+
+  // ---- Dynamic mode: heights, sides and rears follow the intensity of the music. A live analyser on the music bus
+  // (loudness, bass and how far both are above their own slow average) gives an intensity 0..1 that swells quickly and
+  // falls slowly; each group opens over its own part of that range and the page sends the gains to the app ten times a
+  // second. The front pair and the centre always play. The bus gain follows the power in use, so the loudness stays put.
+  const smooth = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  // The whole song is analysed once (fetched and decoded at 8 kHz in the page): loudness and bass per quarter second,
+  // each judged against that song's own quiet and loud parts (30th to 95th percentile, with a floor on the spread so a flat
+  // song does not turn small wobbles into peaks), then blended and smoothed over ~1.5 s. The page looks the intensity up
+  // by playback position, so seeking changes nothing and the groups can open a moment before the beat they belong to.
+  const DYN_MAX_BYTES = 80e6;
+  async function dynAnalyse(url, job) {
+    const res = await fetch(url, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const len = Number(res.headers.get('content-length') || 0);
+    if (len > DYN_MAX_BYTES) throw new Error('file too large to analyse');
+    const raw = await res.arrayBuffer();
+    if (job !== DYN.job) return null;
+    const ab = await new OfflineAudioContext(2, 8000, 8000).decodeAudioData(raw);
+    if (job !== DYN.job) return null;
+    const sr = ab.sampleRate, win = Math.max(1, Math.round(sr / 4));
+    const L = ab.getChannelData(0), R = ab.numberOfChannels > 1 ? ab.getChannelData(1) : L;
+    const n = Math.floor(L.length / win);
+    const a = Math.exp(-2 * Math.PI * 150 / sr);
+    let y = 0;
+    const ld = new Float32Array(n), bs = new Float32Array(n);
+    for (let w = 0; w < n; w++) {
+      let sm = 0, sb = 0;
+      for (let i = w * win, e = i + win; i < e; i++) {
+        const m = (L[i] + R[i]) * 0.5;
+        y = (1 - a) * m + a * y;
+        sm += m * m; sb += y * y;
+      }
+      ld[w] = 10 * Math.log10(sm / win + 1e-10);
+      bs[w] = 10 * Math.log10(sb / win + 1e-10);
+    }
+    const pct = (arr, q) => { const c = Array.from(arr).filter((v) => v > -80).sort((p1, p2) => p1 - p2); return c.length ? c[Math.min(c.length - 1, Math.floor(q * c.length))] : -80; };
+    const norm = (arr, floorDb) => {
+      const lo = pct(arr, 0.3), hi = Math.max(pct(arr, 0.95), lo + floorDb);
+      return Float32Array.from(arr, (v) => (v <= -80 ? 0 : Math.min(1, Math.max(0, (v - lo) / (hi - lo)))));
+    };
+    const nl = norm(ld, 6), nb = norm(bs, 8);
+    const f = new Float32Array(n);
+    for (let w = 0; w < n; w++) f[w] = 0.6 * nl[w] + 0.4 * nb[w];
+    const out = new Float32Array(n), r = 3;                  // ~1.5 s box smoothing
+    for (let w = 0; w < n; w++) {
+      let t = 0, c = 0;
+      for (let k = Math.max(0, w - r); k <= Math.min(n - 1, w + r); k++) { t += f[k]; c++; }
+      out[w] = t / c;
+    }
+    return out;
+  }
+  function startDyn() {
+    if (DYN.iv || IOS) return;
+    DYN.iv = setInterval(() => {
+      if (!DYN_FLAG || mediaEl.paused) return;
+      const url = mediaEl.currentSrc || mediaEl.src || '';
+      if (url !== DYN.url) {                                  // a new song: analyse it
+        DYN.url = url; DYN.curve = null; DYN.I = 0.3;
+        const job = ++DYN.job;
+        if (url) dynAnalyse(url, job).then((c) => { if (c && job === DYN.job) DYN.curve = c; }).catch((e) => console.info('Dynamic: not analysed (' + e.message + '), neutral'));
+      }
+      let target = 0.3;                                        // no curve (yet, or it failed): neutral
+      if (DYN.curve) {
+        const i = Math.min(DYN.curve.length - 1, Math.max(0, Math.round((mediaEl.currentTime + 0.25) * 4)));
+        target = DYN.curve[i];
+      }
+      DYN.I += (target - DYN.I) * (1 - Math.exp(-0.1 / (target > DYN.I ? 0.4 : 2.5)));
+      DYN.g = { side: 0.35 + 0.65 * smooth(DYN.I, 0.1, 0.45), back: 0.2 + 0.8 * smooth(DYN.I, 0.25, 0.6), top: 0.9 * smooth(DYN.I, 0.5, 0.85) };
+      bridgeSend({ type: 'gains', side: +DYN.g.side.toFixed(3), back: +DYN.g.back.toFixed(3), top: +DYN.g.top.toFixed(3) });
+      applyVolume();
+    }, 100);
+  }
+  function stopDyn() {
+    if (!DYN.iv) return;
+    clearInterval(DYN.iv);
+    DYN.iv = 0;
+    DYN.job++; DYN.url = ''; DYN.curve = null;
+    DYN.I = 0; DYN.g = { side: 1, back: 1, top: 1 };
+    applyVolume();
+  }
+  function setDynamic(on) {
+    DYN.on = !!on;
+    store('dynamic', DYN.on);
+    if (DYN.on && UP.mode !== 'all') { setUpMode('all'); }
+    saveDevPrefs();
+    bridgeSettings();
+    if (!DYN.on) stopDyn();
+    renderSurround();
+    toast(DYN.on ? 'Dynamic: sides, rears and heights follow the music' : 'Dynamic off');
   }
 
   function setUpMode(mode) {
     const before = { n: speakerCount(), vol: userVolume };
     UP.mode = mode === 'stereo' ? 'stereo' : 'all';
     store('upmode', UP.mode);
+    saveDevPrefs();
     buildUpmix(before);
     toast(UP.mode === 'all' ? 'Every ear-level speaker' : 'Stereo, front pair only');
   }
@@ -1465,7 +1662,13 @@
   function spkActive(name) {
     if (name === 'FL' || name === 'FR') return true;
     if (UP.mode !== 'all') return false;
+    if (DYN.on && bridgeActive()) return true;          // dynamic: every speaker takes part, at its own gain
     return !SPK_POS[name].top || UP.heights;
+  }
+  // The dynamic mode's gain for a speaker (1 for the front pair and the centre, and whenever it is off).
+  function dynGainOf(name) {
+    if (!(DYN.on && bridgeActive() && UP.mode === 'all')) return 1;
+    return name === 'SL' || name === 'SR' ? DYN.g.side : name === 'BL' || name === 'BR' ? DYN.g.back : SPK_POS[name].top ? DYN.g.top : 1;
   }
 
   // Taps on the stereo bus; buildUpmix reconnects the splitter after it clears the bus.
@@ -1515,7 +1718,9 @@
     const heading = SPK.el.querySelector('strong');
     const ink = (heading && getComputedStyle(heading).color) || '#eee';
     const line = css.getPropertyValue('--line-strong').trim() || '#555';
-    const cx = w / 2, cy = h / 2 + 4, R = Math.min(w, h) / 2 - 30;
+    const dynUI = DYN.on && UP.mode === 'all' && bridgeActive();
+    const strip = dynUI ? 50 : 0;                         // room for the dynamic bars under the speakers
+    const cx = w / 2, cy = (h - strip) / 2 + 4, R = Math.min(w, h - strip) / 2 - 30;
     const ok = spkTap();
     const lv = { L: 0, R: 0, M: 0 };
     if (ok && !document.hidden && !mediaEl.paused) {
@@ -1533,7 +1738,7 @@
     for (const name of names) {
       const p = SPK_POS[name];
       const on = spkActive(name);
-      const target = on ? lv[p.src] : 0;
+      const target = on ? lv[p.src] * dynGainOf(name) : 0;
       SPK.lv[name] = Math.max(target, (SPK.lv[name] || 0) * 0.92);    // quick up, slow down
       const v = SPK.lv[name];
       const x = cx + p.x * R, y = cy + p.y * R;
@@ -1552,8 +1757,24 @@
       g.fillStyle = on ? ink : muted;
       g.fillText(name, x, y + (p.top ? 22 : 28));
     }
+    if (dynUI) {
+      // the dynamic level adjustment: the intensity the page measures and the gain each speaker group gets from it
+      const bars = [['Intensity', DYN.I], ['Sides', DYN.g.side], ['Rears', DYN.g.back], ['Heights', DYN.g.top]];
+      const bw = (w - 40) / bars.length, by = h - 30;
+      g.textAlign = 'center';
+      bars.forEach(([label, v], i) => {
+        const x = 20 + i * bw + 4, ww = bw - 8;
+        g.fillStyle = line; g.globalAlpha = 0.5;
+        g.fillRect(x, by, ww, 6);
+        g.globalAlpha = 1;
+        g.fillStyle = accent;
+        g.fillRect(x, by, ww * Math.max(0, Math.min(1, v)), 6);
+        g.fillStyle = muted;
+        g.fillText(label + ' ' + Math.round(v * 100) + '%', x + ww / 2, by + 20);
+      });
+    }
     $('muSpkInfo').textContent = !ok ? 'Play something to see the speakers'
-      : `${playedName(bed, UP.mode === 'all' && UP.heights) || 'Stereo'} - ${UP.mode === 'all' ? (UP.heights ? 'every speaker, heights on' : 'every ear-level speaker') : 'front pair only'}`
+      : `${playedName(bed, UP.mode === 'all' && (UP.heights || dynUI)) || 'Stereo'} - ${UP.mode === 'all' ? (dynUI ? 'dynamic: the groups follow the music' : UP.heights ? 'every speaker, heights on' : 'every ear-level speaker') : 'front pair only'}`
         + (bridgeActive() ? ' - via the Spatial app' : '');
     SPK.raf = requestAnimationFrame(spkDraw);
   }
@@ -1674,6 +1895,11 @@
   let wantedVolume = 1;                    // what the user chose; the range may clamp what plays
   function speakerCount() {
     if (UP.mode !== 'all') return 2;
+    if (DYN.on && bridgeActive()) {          // the groups play at their dynamic gains: count them by the power they add
+      let n = 0;
+      for (const nm of spkNames().names) n += nm === 'SL' || nm === 'SR' ? DYN.g.side ** 2 : nm === 'BL' || nm === 'BR' ? DYN.g.back ** 2 : SPK_POS[nm].top ? DYN.g.top ** 2 : 1;
+      return Math.max(2, n);
+    }
     const n = spkNames().names.filter(spkActive).length;
     return Math.max(2, n);
   }
@@ -2240,7 +2466,7 @@
       });
       el.addEventListener('play', () => {
         if (BR_BC) BR_BC.postMessage({ t: 'playing', id: BR_TAB });       // the other tabs of this site pause
-        if (BR.yielded) bridgeKick();         // playing here now: this tab takes the app back
+        if (BR.yielded || BR.idle) bridgeKick();         // playing here now: this tab takes (or first opens) the app
         else if (bridgeHeld() && BR_BC) bridgeClaim();      // and tells the others it has it
         if (el !== mediaEl) { el.pause(); return; }
         startLoudness();
@@ -4504,16 +4730,25 @@
     // A disabled button gets no hover events, and Heights is disabled exactly when the bridge is missing, so
     // while the page has given up the pointer is checked against the two buttons' rectangles instead.
     document.addEventListener('pointermove', (e) => {
-      if (!BR.stopped || BR.ws || BR.yielded) return;
-      for (const id of ['muHeights', 'muSurround']) {
+      if (!BR.stopped || BR.ws || BR.yielded || BR.idle) return;
+      for (const id of ['muHeights', 'muSurround', 'muDynamic']) {
         const r = $(id).getBoundingClientRect();
         if (r.width && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { bridgeKick(); return; }
       }
     }, { passive: true });
-    for (const id of ['muHeights', 'muSurround']) {
+    for (const id of ['muHeights', 'muSurround', 'muDynamic']) {
       for (const ev of ['focus', 'pointerdown']) $(id).addEventListener(ev, bridgeKick);
     }
+    // a disabled button gets no pointerdown either; while the page is idle a press on one is caught here
+    document.addEventListener('pointerdown', (e) => {
+      if (!BR.idle) return;
+      for (const id of ['muHeights', 'muSurround', 'muDynamic']) {
+        const r = $(id).getBoundingClientRect();
+        if (r.width && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { bridgeKick(); return; }
+      }
+    }, true);
     $('muHeights').addEventListener('click', () => setHeights(!UP.heights));
+    $('muDynamic').addEventListener('click', () => setDynamic(!DYN.on));
     $('muSurround').addEventListener('click', () => setUpMode(UP.mode === 'all' ? 'stereo' : 'all'));
     // Another output device became the active one: its channels decide again.
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
